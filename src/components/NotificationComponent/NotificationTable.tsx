@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { nominationService } from "@/services/nominationService";
 import type { SystemNotification } from "@/mocks/notifications.mock";
+import { Pagination } from "@/common/Pagination";
 import { toast } from "@/components/ui/sonner";
 
 export const NotificationTable: React.FC = () => {
@@ -10,6 +11,8 @@ export const NotificationTable: React.FC = () => {
     nominationService.getNotifications()
   );
   const [filter, setFilter] = useState<"all" | "unread">("all");
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
 
   const refreshNotifications = () => {
     setNotifications(nominationService.getNotifications());
@@ -23,9 +26,23 @@ export const NotificationTable: React.FC = () => {
     };
   }, []);
 
+  // Reset to page 1 whenever filter changes
+  const handleFilterChange = (newFilter: "all" | "unread") => {
+    setFilter(newFilter);
+    setCurrentPage(1);
+  };
+
   const unreadCount = notifications.filter((n) => !n.read).length;
   const displayedList =
     filter === "unread" ? notifications.filter((n) => !n.read) : notifications;
+
+  const totalPages = Math.max(1, Math.ceil(displayedList.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const paginatedList = displayedList.slice(
+    (safeCurrentPage - 1) * pageSize,
+    safeCurrentPage * pageSize
+  );
 
   const handleMarkAsRead = (id?: string) => {
     if (!id) return;
@@ -56,7 +73,7 @@ export const NotificationTable: React.FC = () => {
           url: "/notifications",
         })
       );
-    } catch {}
+    } catch { }
 
     if (isApprovalRelated) {
       navigate(`/approvals/${reqId}`);
@@ -83,8 +100,8 @@ export const NotificationTable: React.FC = () => {
           type="button"
           role="tab"
           aria-selected={filter === "all"}
-          onClick={() => setFilter("all")}
-          className="tab"
+          onClick={() => handleFilterChange("all")}
+          className="tab cursor-pointer"
         >
           All Notifications
         </button>
@@ -92,8 +109,8 @@ export const NotificationTable: React.FC = () => {
           type="button"
           role="tab"
           aria-selected={filter === "unread"}
-          onClick={() => setFilter("unread")}
-          className="tab"
+          onClick={() => handleFilterChange("unread")}
+          className="tab cursor-pointer"
         >
           Unread Alerts <span className="n">{unreadCount}</span>
         </button>
@@ -101,25 +118,23 @@ export const NotificationTable: React.FC = () => {
 
       {/* Notifications List Card matching HTML Prototype */}
       <section className="card bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-        {displayedList.length > 0 ? (
+        {paginatedList.length > 0 ? (
           <div className="divide-y divide-slate-100">
-            {displayedList.map((n, idx) => {
+            {paginatedList.map((n, idx) => {
               const iconClass = getNotifIcon(n);
               const isUnread = !n.read;
               return (
                 <article
                   key={n.id || `notif_${idx}`}
-                  className={`p-4 sm:p-5 flex gap-4 transition-colors ${
-                    isUnread ? "bg-blue-50/40" : "bg-white hover:bg-slate-50/50"
-                  }`}
+                  className={`p-4 sm:p-5 flex gap-4 transition-colors ${isUnread ? "bg-blue-50/40" : "bg-white hover:bg-slate-50/50"
+                    }`}
                 >
                   {/* Status / Category Icon Avatar */}
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${
-                      isUnread
-                        ? "bg-blue-100 text-blue-600 font-bold"
-                        : "bg-slate-100 text-slate-500"
-                    }`}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${isUnread
+                      ? "bg-blue-100 text-blue-600 font-bold"
+                      : "bg-slate-100 text-slate-500"
+                      }`}
                   >
                     <i className={`fa-solid ${iconClass}`}></i>
                   </div>
@@ -145,7 +160,7 @@ export const NotificationTable: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleViewDetails(n)}
-                          className="btn btn-sm btn-outline !text-xs !py-1 px-3 inline-flex items-center gap-1.5"
+                          className="btn btn-sm btn-outline !text-xs !py-1 px-3 inline-flex items-center gap-1.5 cursor-pointer"
                         >
                           <i className="fa-solid fa-eye text-blue-600"></i> View Details
                         </button>
@@ -154,7 +169,7 @@ export const NotificationTable: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleMarkAsRead(n.id)}
-                          className="btn btn-sm btn-outline !text-xs !py-1 px-3 text-slate-600 hover:text-slate-900"
+                          className="btn btn-sm btn-outline !text-xs !py-1 px-3 text-slate-600 hover:text-slate-900 cursor-pointer"
                         >
                           Mark as Read
                         </button>
@@ -169,6 +184,23 @@ export const NotificationTable: React.FC = () => {
           <div className="p-12 text-center text-slate-400 text-sm">
             <i className="fa-regular fa-bell-slash text-2xl text-slate-300 block mb-2"></i>
             No notifications found in this view.
+          </div>
+        )}
+
+        {/* Functional Pagination reusing shared Pagination component */}
+        {displayedList.length > 0 && (
+          <div className="p-4 border-t border-slate-100 bg-white">
+            <Pagination
+              currentPage={safeCurrentPage}
+              pageSize={pageSize}
+              totalRecords={displayedList.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setCurrentPage(1);
+              }}
+              pageSizeOptions={[10, 25, 50, 100]}
+            />
           </div>
         )}
       </section>

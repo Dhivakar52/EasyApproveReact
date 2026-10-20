@@ -69,6 +69,7 @@ export interface ClarificationRecord {
   email?: string;
   answeredAt?: number | null;
   revision?: number;
+  comments?: string;
 }
 
 export interface DecisionRecord {
@@ -138,6 +139,7 @@ export interface Nomination {
   reason?: string;
   timeline?: TimelineEvent[];
   clarification?: ClarificationRecord;
+  clarifications?: ClarificationRecord[];
   decision?: DecisionRecord;
   approvalRef?: string;
   withdrawReason?: string;

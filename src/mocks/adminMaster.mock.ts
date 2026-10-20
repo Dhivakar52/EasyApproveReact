@@ -50,12 +50,7 @@ export const MOCK_CYCLES: NominationCycleItem[] = [
 ];
 
 export const MOCK_ROLES: SystemRoleItem[] = [
-  { id: "1", name: "Super Admin", description: "Full system administration, tenant configuration, and database controls" },
-  { id: "2", name: "Admin", description: "Administrative access, role management, cycles setup, and master catalog edits" },
-  { id: "3", name: "Manager", description: "First-level validation authority for department-level nominations" },
-  { id: "4", name: "Jury Member", description: "Evaluates assigned nominee profiles and inputs objective scoring matrices" },
-  { id: "5", name: "President / Executive", description: "Final presidential validation, executive scoring, and winner confirmations" },
-  { id: "6", name: "Employee", description: "Standard user permissions: can file self-nominations or nominate peers" },
-  { id: "7", name: "Auditor / Observer", description: "Read-only compliance verification and audit report export access" },
-  { id: "8", name: "Department Coordinator", description: "Coordinates batch nominations and sends reminder notifications" },
+  { id: "1", name: "Admin", description: "Full administrative access, user directory management, and governance settings" },
+  { id: "2", name: "User", description: "Standard employee permissions: create approval requests, track authored requests, and take approver actions" },
 ];
+

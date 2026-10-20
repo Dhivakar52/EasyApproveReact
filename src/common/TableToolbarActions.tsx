@@ -6,6 +6,7 @@ import {
   Printer,
   Plus,
 } from "lucide-react";
+import { CustomPanel } from "@/common/CustomPanel";
 
 export interface ExtraAddButton {
   onClick: () => void;
@@ -17,9 +18,16 @@ export interface ExtraAddButton {
 export interface TableToolbarActionsProps {
   // Filter action
   onOpenFilter?: () => void;
+  onCloseFilter?: () => void;
+  isFilterOpen?: boolean;
   hasActiveFilters?: boolean;
   onClearFilters?: () => void;
+  onApplyFilters?: () => void;
   activeFilterCount?: number;
+
+  // Built-in Custom Filter Panel
+  filterPanelContent?: React.ReactNode;
+  filterPanelTitle?: string;
 
   // Export / Column Visibility action
   onExport?: () => void;
@@ -44,8 +52,14 @@ export interface TableToolbarActionsProps {
 
 export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
   onOpenFilter,
+  onCloseFilter,
+  isFilterOpen: controlledIsFilterOpen,
   hasActiveFilters = false,
   onClearFilters,
+  onApplyFilters,
+  activeFilterCount,
+  filterPanelContent,
+  filterPanelTitle = "Filter Records",
   onExport,
   exportTitle = "Export to CSV",
   onPrint,
@@ -57,10 +71,27 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
   showPrintAction = true,
   className = "",
 }) => {
+  const [internalFilterOpen, setInternalFilterOpen] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const actionRef = useRef<HTMLDivElement>(null);
 
-  // Close popup when clicking outside
+  const isFilterOpen = controlledIsFilterOpen !== undefined ? controlledIsFilterOpen : internalFilterOpen;
+
+  const handleOpenFilter = () => {
+    if (controlledIsFilterOpen === undefined) {
+      setInternalFilterOpen(true);
+    }
+    onOpenFilter?.();
+  };
+
+  const handleCloseFilter = () => {
+    if (controlledIsFilterOpen === undefined) {
+      setInternalFilterOpen(false);
+    }
+    onCloseFilter?.();
+  };
+
+  // Close popup menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (actionRef.current && !actionRef.current.contains(e.target as Node)) {
@@ -76,129 +107,150 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
   };
 
   return (
-    <div className={`flex items-center gap-2 shrink-0 ${className}`}>
-      {/* Filter / Actions Trigger Button */}
-      <div className="relative shrink-0" ref={actionRef}>
-        <button
-          type="button"
-          onClick={() => setShowActions((prev) => !prev)}
-          className={`h-9 w-9 p-0 flex items-center justify-center border rounded-lg transition-all cursor-pointer shadow-xs ${
-            hasActiveFilters
-              ? "border-blue-500 bg-blue-50/70 text-blue-600"
-              : "border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
-          }`}
-          title="Table Actions"
-          aria-label="Table Actions"
-          aria-expanded={showActions}
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-        </button>
-
-        {/* Clear filter indicator badge */}
-        {hasActiveFilters && (
+    <>
+      <div className={`flex items-center gap-2 shrink-0 ${className}`}>
+        {/* Dedicated Filter Trigger Button */}
+        {showFilterAction && (
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onClearFilters?.();
-            }}
-            title="Clear filters"
-            className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center shadow-md hover:bg-blue-700 cursor-pointer transition-transform hover:scale-110"
+            onClick={handleOpenFilter}
+            className={`h-9 px-3 flex items-center gap-1.5 border rounded-lg transition-all cursor-pointer shadow-xs text-xs font-medium ${
+              hasActiveFilters
+                ? "border-blue-500 bg-blue-50/80 text-blue-700 font-semibold"
+                : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900"
+            }`}
+            title="Filter Records"
+            aria-label="Filter Records"
+            aria-expanded={isFilterOpen}
           >
-            <SlidersHorizontal size={9} />
+            <Filter className="h-3.5 w-3.5 text-slate-500" />
+            <span>Filter</span>
+            {activeFilterCount && activeFilterCount > 0 ? (
+              <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                {activeFilterCount}
+              </span>
+            ) : hasActiveFilters ? (
+              <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+            ) : null}
           </button>
         )}
 
-        {/* Actions Floating Popup Menu */}
-        {showActions && (
-          <div
-            className="absolute right-0 mt-2 bg-white border border-slate-200/90 rounded-2xl shadow-xl p-2 flex items-center gap-2 z-50 whitespace-nowrap animate-in fade-in zoom-in-95 duration-100"
-            role="menu"
-          >
-            {showFilterAction && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowActions(false);
-                  onOpenFilter?.();
-                }}
-                className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
-                title="Filter"
-                aria-label="Filter"
-              >
-                <Filter className="w-4 h-4" strokeWidth={1.75} />
-              </button>
-            )}
+        {/* More Actions (Export, Print, Column options) Trigger Button */}
+        {(showExportAction || showPrintAction) && (
+          <div className="relative shrink-0" ref={actionRef}>
+            <button
+              type="button"
+              onClick={() => setShowActions((prev) => !prev)}
+              className="h-9 w-9 p-0 flex items-center justify-center border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 rounded-lg transition-all cursor-pointer shadow-xs"
+              title="Table Actions"
+              aria-label="Table Actions"
+              aria-expanded={showActions}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </button>
 
-            {showExportAction && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowActions(false);
-                  if (onExport) {
-                    onExport();
-                  }
-                }}
-                className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
-                title={exportTitle}
-                aria-label={exportTitle}
+            {/* Actions Floating Popup Menu */}
+            {showActions && (
+              <div
+                className="absolute right-0 mt-2 bg-white border border-slate-200/90 rounded-2xl shadow-xl p-2 flex items-center gap-2 z-50 whitespace-nowrap animate-in fade-in zoom-in-95 duration-100"
+                role="menu"
               >
-                <FileSpreadsheet className="w-4 h-4" strokeWidth={1.75} />
-              </button>
-            )}
+                {showExportAction && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowActions(false);
+                      if (onExport) {
+                        onExport();
+                      }
+                    }}
+                    className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                    title={exportTitle}
+                    aria-label={exportTitle}
+                  >
+                    <FileSpreadsheet className="w-4 h-4" strokeWidth={1.75} />
+                  </button>
+                )}
 
-            {showPrintAction && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowActions(false);
-                  if (onPrint) {
-                    onPrint();
-                  } else {
-                    handleDefaultPrint();
-                  }
-                }}
-                className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
-                title="Print"
-                aria-label="Print"
-              >
-                <Printer className="w-4 h-4" strokeWidth={1.75} />
-              </button>
+                {showPrintAction && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowActions(false);
+                      if (onPrint) {
+                        onPrint();
+                      } else {
+                        handleDefaultPrint();
+                      }
+                    }}
+                    className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                    title="Print"
+                    aria-label="Print"
+                  >
+                    <Printer className="w-4 h-4" strokeWidth={1.75} />
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}
+
+        {/* Primary Add Button */}
+        {onAdd && (
+          <button
+            type="button"
+            onClick={onAdd}
+            className="h-9 w-9 p-0 shrink-0 text-white cursor-pointer bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center justify-center shadow-xs transition-colors"
+            title={addTitle}
+            aria-label={addTitle}
+          >
+            <Plus className="h-4 w-4" strokeWidth={2.2} />
+          </button>
+        )}
+
+        {/* Additional Add Buttons (if any) */}
+        {extraAddButtons?.map((btn, idx) => (
+          <button
+            key={idx}
+            type="button"
+            onClick={btn.onClick}
+            className={
+              btn.className ||
+              "h-9 w-9 p-0 shrink-0 text-white cursor-pointer bg-blue-600 hover:bg-blue-700 rounded-md flex items-center justify-center shadow-xs transition-colors"
+            }
+            title={btn.title}
+            aria-label={btn.title}
+          >
+            {btn.icon || <Plus className="h-4 w-4" />}
+          </button>
+        ))}
       </div>
 
-      {/* Primary Add Button (Icon-Only Compact Blue Square) */}
-      {onAdd && (
-        <button
-          type="button"
-          onClick={onAdd}
-          className="h-9 w-9 p-0 shrink-0 text-white cursor-pointer bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center justify-center shadow-xs transition-colors"
-          title={addTitle}
-          aria-label={addTitle}
-        >
-          <Plus className="h-4 w-4" strokeWidth={2.2} />
-        </button>
-      )}
-
-      {/* Additional Add Buttons (if any, e.g. for dual adds) */}
-      {extraAddButtons?.map((btn, idx) => (
-        <button
-          key={idx}
-          type="button"
-          onClick={btn.onClick}
-          className={
-            btn.className ||
-            "h-9 w-9 p-0 shrink-0 text-white cursor-pointer bg-blue-600 hover:bg-blue-700 rounded-md flex items-center justify-center shadow-xs transition-colors"
+      {/* Built-in Custom Filter Panel */}
+      {filterPanelContent && (
+        <CustomPanel
+          isOpen={isFilterOpen}
+          title={filterPanelTitle}
+          onClose={handleCloseFilter}
+          onSave={onApplyFilters}
+          saveLabel="Apply Filters"
+          cancelLabel="Reset Filters"
+          footerExtra={
+            onClearFilters && hasActiveFilters ? (
+              <button
+                type="button"
+                onClick={onClearFilters}
+                className="text-xs text-slate-500 hover:text-rose-600 font-medium transition cursor-pointer"
+              >
+                Clear all
+              </button>
+            ) : undefined
           }
-          title={btn.title}
-          aria-label={btn.title}
         >
-          {btn.icon || <Plus className="h-4 w-4" />}
-        </button>
-      ))}
-    </div>
+          {filterPanelContent}
+        </CustomPanel>
+      )}
+    </>
   );
 };
 

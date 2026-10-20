@@ -126,39 +126,13 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const getUserDisplayName = () => {
-    if (!userRole) return 'Ravi Kumar';
-    switch (userRole) {
-      case 'admin':
-        return 'System Administrator';
-      case 'manager':
-        return 'Manager Approver';
-      case 'jury':
-        return 'Jury Member';
-      case 'presidentUnit':
-        return 'President Unit';
-      case 'presidentLevel':
-        return 'President Level';
-      default:
-        return 'Ravi Kumar';
-    }
+    if (userRole === 'admin') return 'System Administrator';
+    return 'Demo User';
   };
 
   const getUserInitials = () => {
-    if (!userRole) return 'RK';
-    switch (userRole) {
-      case 'admin':
-        return 'SA';
-      case 'manager':
-        return 'MA';
-      case 'jury':
-        return 'JM';
-      case 'presidentUnit':
-        return 'PU';
-      case 'presidentLevel':
-        return 'PL';
-      default:
-        return 'RK';
-    }
+    if (userRole === 'admin') return 'SA';
+    return 'DU';
   };
 
   // Derive current page title

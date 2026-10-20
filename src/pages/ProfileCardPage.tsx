@@ -26,39 +26,17 @@ export const ProfileCardPage: React.FC = () => {
   const approvedCount = nominations.filter((n) => n.status === 'Approved').length;
 
   const getUserDisplayName = () => {
-    if (!userRole) return 'Ravi Kumar';
-    switch (userRole) {
-      case 'admin':
-        return 'System Administrator';
-      case 'manager':
-        return 'Manager Approver';
-      case 'jury':
-        return 'Jury Member';
-      case 'presidentUnit':
-        return 'President Unit';
-      case 'presidentLevel':
-        return 'President Level';
-      default:
-        return 'Ravi Kumar';
-    }
+    if (userRole === 'admin') return 'System Administrator';
+    return 'Demo User';
   };
 
   const getUserInitials = () => {
-    if (!userRole) return 'RK';
-    switch (userRole) {
-      case 'admin':
-        return 'SA';
-      case 'manager':
-        return 'MA';
-      case 'jury':
-        return 'JM';
-      default:
-        return 'RK';
-    }
+    if (userRole === 'admin') return 'SA';
+    return 'DU';
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
         <div>

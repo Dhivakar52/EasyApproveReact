@@ -127,13 +127,11 @@ export const Pagination = ({
             onChange={(e) => handlePageSizeChange(Number(e.target.value))}
             className="border border-slate-200 bg-white px-2 py-0.5 rounded text-xs text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500"
           >
-            {Array.from(new Set([pageSize, ...pageSizeOptions]))
-              .sort((a, b) => a - b)
-              .map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
+            {pageSizeOptions.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
           </select>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import React from "react";
-import { Calendar, ArrowRight, X } from "lucide-react";
+import { ArrowRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export interface DateRangeFilterProps {
   fromDate?: string;
@@ -31,51 +32,41 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 border border-slate-200 rounded-lg bg-white text-xs text-slate-700 shadow-xs shrink-0 max-w-full overflow-hidden transition-colors focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500",
+        "inline-flex items-center gap-2 max-w-full shrink-0",
         className
       )}
     >
       {/* From Date */}
-      <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
-        <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0 pointer-events-none" />
-        <input
-          type="date"
+      <div className="w-36">
+        <DatePicker
           value={fromDate}
-          onChange={(e) => onFromDateChange(e.target.value)}
+          onChange={onFromDateChange}
           placeholder="From Date"
-          className="bg-transparent text-[11px] sm:text-xs text-slate-700 focus:outline-none cursor-pointer w-[95px] sm:w-[108px] placeholder:text-slate-400"
-          title="From Date"
-          aria-label="From Date"
+          maxDate={toDate}
         />
       </div>
 
-      {/* Arrow separator matching screenshot */}
       <ArrowRight className="w-3 h-3 text-slate-400 shrink-0 pointer-events-none" />
 
       {/* To Date */}
-      <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
-        <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0 pointer-events-none" />
-        <input
-          type="date"
+      <div className="w-36">
+        <DatePicker
           value={toDate}
-          onChange={(e) => onToDateChange(e.target.value)}
+          onChange={onToDateChange}
           placeholder="To Date"
-          className="bg-transparent text-[11px] sm:text-xs text-slate-700 focus:outline-none cursor-pointer w-[95px] sm:w-[108px] placeholder:text-slate-400"
-          title="To Date"
-          aria-label="To Date"
+          minDate={fromDate}
         />
       </div>
 
-      {/* Clear Button if any date is selected */}
       {hasValue && (
         <button
           type="button"
           onClick={handleClear}
-          className="p-0.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors ml-0.5 cursor-pointer"
+          className="p-1 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
           title="Clear date range"
           aria-label="Clear date range"
         >
-          <X className="w-3 h-3" />
+          <X className="w-3.5 h-3.5" />
         </button>
       )}
     </div>

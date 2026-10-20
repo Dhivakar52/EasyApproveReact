@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import React, { useState } from "react";
 import { cn } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export interface FieldLabelProps {
   children: ReactNode;
@@ -184,8 +185,7 @@ export interface DateFieldProps {
 
 export function DateField({
   id,
-  name,
-  placeholder,
+  placeholder = "Select date",
   value,
   defaultValue,
   onChange,
@@ -194,22 +194,25 @@ export function DateField({
   min,
   max,
 }: DateFieldProps) {
+  const [internalVal, setInternalVal] = useState<string>(defaultValue || "");
+  const currentValue = value !== undefined ? value : internalVal;
+
+  const handleChange = (d: string) => {
+    setInternalVal(d);
+    onChange?.(d);
+  };
+
   return (
-    <input
+    <DatePicker
       id={id}
-      name={name}
-      type="date"
       placeholder={placeholder}
+      value={currentValue}
+      onChange={handleChange}
       disabled={disabled}
-      min={min}
-      max={max}
-      value={value !== undefined ? value : undefined}
-      defaultValue={defaultValue}
-      onChange={(e) => onChange?.(e.target.value)}
-      className={cn(
-        "w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all disabled:opacity-50 disabled:bg-gray-100",
-        className
-      )}
+      minDate={min}
+      maxDate={max}
+      className={className}
+      allowClear
     />
   );
 }

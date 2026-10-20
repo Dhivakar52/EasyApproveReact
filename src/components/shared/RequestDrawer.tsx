@@ -48,20 +48,10 @@ export const RequestDrawer: React.FC<RequestDrawerProps> = ({
   if (!isOpen || !nomination) return null;
 
   const currentRole = (localStorage.getItem('userRole') as UserRole) || 'user';
-  const reviewerName =
-    currentRole === 'admin'
-      ? 'Administrator'
-      : currentRole === 'manager'
-      ? 'Manager Approver'
-      : currentRole.toUpperCase();
+  const reviewerName = currentRole === 'admin' ? 'Administrator' : 'Approver';
 
   const isPending = nomination.status === 'Pending' || nomination.status === 'In Review';
-  const canApprove =
-    currentRole === 'admin' ||
-    currentRole === 'manager' ||
-    currentRole === 'jury' ||
-    currentRole === 'presidentUnit' ||
-    currentRole === 'presidentLevel';
+  const canApprove = currentRole === 'admin' || currentRole === 'user';
 
   const handleApprove = () => {
     setActionLoading(true);

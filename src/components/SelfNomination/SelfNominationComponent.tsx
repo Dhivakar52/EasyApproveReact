@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   Paperclip,
   X,
@@ -14,11 +14,16 @@ import {
   getMinDeadlineDate,
 } from '@/config/approval.config';
 import { nominationService } from '@/services/nominationService';
-import type { SupportingDocument, NominationType } from '@/dataTypes/nomination';
+import type { SupportingDocument, NominationType, Nomination } from '@/dataTypes/nomination';
+import { DatePicker } from '@/components/ui/date-picker';
 import { toast } from '@/components/ui/sonner';
 
 export default function SelfNominationComponent() {
+  const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
+
+  const [editReq, setEditReq] = useState<Nomination | null>(null);
+  const isEditMode = Boolean(id && editReq);
 
   // Form State matching HTML Prototype Exactly
   const [group, setGroup] = useState('');
@@ -52,6 +57,68 @@ export default function SelfNominationComponent() {
   // Validation Errors
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Load existing request data if in edit mode (via URL params :id)
+  useEffect(() => {
+    if (!id) {
+      // Clean create mode
+      setEditReq(null);
+      setGroup('');
+      setApproverEmail('');
+      setApproverName('');
+      setCcGroup('');
+      setCcMemberSelect('');
+      setCcEmails([]);
+      setCustomCcInput('');
+      setTitle('');
+      setDetails('');
+      setReason('');
+      setApprovalType('Expense Request');
+      setAmount('');
+      setBudgeted('Yes');
+      setAmountBudgeted('');
+      setDeadline(getMinDeadlineDate(2));
+      setExtraReason('');
+      setFiles([]);
+      setErrors({});
+      return;
+    }
+
+    const found = nominationService.getNominationById(id);
+    if (!found) {
+      toast.error(`Request ${id} not found.`);
+      navigate('/my-nominations');
+      return;
+    }
+
+    setEditReq(found);
+    const initialGroup = found.entity || found.department || '';
+    setGroup(initialGroup);
+    setApproverEmail(found.approverEmail || found.managerEmail || '');
+    setApproverName(found.approverName || found.assignedEmployee || '');
+
+    // CC emails
+    const existingCc = found.referrals && found.referrals.length > 0
+      ? found.referrals
+      : (found.ccEmail ? found.ccEmail.split(',').map((s: string) => s.trim()).filter(Boolean) : []);
+    setCcEmails(existingCc);
+
+    setTitle(found.title || '');
+    setDetails(found.details || found.description || '');
+    setReason(found.reason || '');
+    setApprovalType(found.type || found.category || 'Expense Request');
+    setAmount(found.amount !== undefined && found.amount !== null ? String(found.amount) : '');
+    setBudgeted(found.budgeted || found.isBudgeted || 'Yes');
+    setAmountBudgeted(
+      found.amountBudgeted !== undefined && found.amountBudgeted !== null
+        ? String(found.amountBudgeted)
+        : (found.budgetAllocated !== undefined && found.budgetAllocated !== null ? String(found.budgetAllocated) : '')
+    );
+    setDeadline(found.deadline || getMinDeadlineDate(2));
+    setExtraReason(found.extraReason || '');
+    setFiles(found.attachments || found.supportingDocuments || []);
+    setErrors({});
+  }, [id, navigate]);
 
   // Group Approver change handler
   const handleGroupChange = (selectedGroup: string) => {
@@ -176,89 +243,166 @@ export default function SelfNominationComponent() {
 
     setIsSubmitting(true);
 
-    const currentUserEmail = localStorage.getItem('userEmail') || 'user@srmtech.com';
-    const currentUserName = currentUserEmail.split('@')[0].replace(/\./g, ' ');
+    const currentUserEmail = (
+      localStorage.getItem('userEmail') || (editReq?.requesterEmail) || 'user@srmtech.com'
+    ).trim();
+    const storedRole = (localStorage.getItem('userRole') || 'user').toLowerCase();
+    let currentUserName = localStorage.getItem('userName') || '';
+    if (!currentUserName) {
+      if (currentUserEmail.toLowerCase().includes('admin') || storedRole === 'admin') {
+        currentUserName = 'Demo Admin';
+      } else if (currentUserEmail.toLowerCase().includes('user') || storedRole === 'user') {
+        currentUserName = 'Demo User';
+      } else {
+        currentUserName = currentUserEmail.split('@')[0].replace(/\./g, ' ');
+      }
+    }
 
-    setTimeout(() => {
-      // Connect to existing nominationService backend logic
-      nominationService.createNomination({
-        title: title.trim(),
-        nominee: currentUserName,
-        nomineeEmail: currentUserEmail,
-        department: group,
-        entity: group,
-        category: approvalType,
-        nominationType: (approvalType.includes('Travel') ? 'Travel Expenses' : 'Project') as NominationType,
-        type: approvalType,
-        amount: Number(amount) || 0,
-        deadline: deadline,
-        budgetAllocated: Number(amountBudgeted) || 0,
-        amountBudgeted: Number(amountBudgeted) || 0,
-        budgeted: budgeted,
-        isBudgeted: budgeted,
-        extraReason: extraReason,
-        approverName: approverName,
-        approverEmail: approverEmail,
-        requesterName: currentUserName,
-        requesterEmail: currentUserEmail,
-        createdAt: new Date().toISOString().split('T')[0],
-        assignedEmployee: approverName,
-        managerEmail: approverEmail,
-        referrals: ccEmails,
-        ccEmail: ccEmails.join(', '),
-        details: details.trim(),
-        reason: reason.trim(),
-        description: `${details}\n\nJustification: ${reason}${extraReason ? `\n\nExtra Budget Rationale: ${extraReason}` : ''}`,
-        supportingDocuments: files,
-        attachments: files.map((f) => ({
-          id: f.id,
-          name: f.name,
-          size: f.size,
-          type: f.type,
-          url: f.url,
-          uploadedAt: f.uploadedAt,
-        })),
-        travelDetails: approvalType.includes('Travel')
-          ? {
-            purpose: title,
-            destination: group,
-            departureDate: deadline,
-            returnDate: deadline,
-            travelMode: 'Official Flight / Transport',
-            estimatedCost: amount,
-            justification: reason,
-          }
-          : undefined,
-        projectDetails: !approvalType.includes('Travel')
-          ? {
-            projectName: title,
-            domain: group,
-            projectRole: 'Lead Proposer',
-            duration: 'Project Lifecycle',
-            impact: reason,
-            keyDeliverables: details,
-          }
-          : undefined,
-      });
+    try {
+      if (isEditMode && editReq) {
+        // Edit Mode: Resubmit existing request and increment version
+        const changes: Partial<Nomination> = {
+          title: title.trim(),
+          department: group,
+          entity: group,
+          category: approvalType,
+          nominationType: (approvalType.includes('Travel') ? 'Travel Expenses' : 'Project') as NominationType,
+          type: approvalType,
+          amount: Number(amount) || 0,
+          deadline: deadline,
+          budgetAllocated: Number(amountBudgeted) || 0,
+          amountBudgeted: Number(amountBudgeted) || 0,
+          budgeted: budgeted,
+          isBudgeted: budgeted,
+          extraReason: extraReason,
+          approverName: approverName,
+          approverEmail: approverEmail,
+          assignedEmployee: approverName,
+          managerEmail: approverEmail,
+          referrals: ccEmails,
+          ccEmail: ccEmails.join(', '),
+          details: details.trim(),
+          reason: reason.trim(),
+          description: `${details}\n\nJustification: ${reason}${extraReason ? `\n\nExtra Budget Rationale: ${extraReason}` : ''}`,
+          supportingDocuments: files,
+          attachments: files,
+        };
 
+        const res = nominationService.wfResubmit(
+          editReq.id,
+          changes,
+          [],
+          'Resubmitted with modifications via edit form',
+          currentUserName
+        );
+
+        setIsSubmitting(false);
+        if (res.success) {
+          toast.success(`Request ${editReq.number || editReq.id} resubmitted for sign-off (v${(editReq.version || 1) + 1}).`);
+          navigate(`/my-nominations/${editReq.number || editReq.id}`);
+        } else {
+          toast.error(res.error || 'Failed to update request.');
+        }
+      } else {
+        // Create Mode: Connect to existing nominationService backend logic
+        nominationService.createNomination({
+          title: title.trim(),
+          nominee: currentUserName,
+          nomineeEmail: currentUserEmail,
+          department: group,
+          entity: group,
+          category: approvalType,
+          nominationType: (approvalType.includes('Travel') ? 'Travel Expenses' : 'Project') as NominationType,
+          type: approvalType,
+          amount: Number(amount) || 0,
+          deadline: deadline,
+          budgetAllocated: Number(amountBudgeted) || 0,
+          amountBudgeted: Number(amountBudgeted) || 0,
+          budgeted: budgeted,
+          isBudgeted: budgeted,
+          extraReason: extraReason,
+          approverName: approverName,
+          approverEmail: approverEmail,
+          requesterName: currentUserName,
+          requesterEmail: currentUserEmail,
+          createdAt: new Date().toISOString().split('T')[0],
+          assignedEmployee: approverName,
+          managerEmail: approverEmail,
+          referrals: ccEmails,
+          ccEmail: ccEmails.join(', '),
+          details: details.trim(),
+          reason: reason.trim(),
+          description: `${details}\n\nJustification: ${reason}${extraReason ? `\n\nExtra Budget Rationale: ${extraReason}` : ''}`,
+          supportingDocuments: files,
+          attachments: files.map((f) => ({
+            id: f.id,
+            name: f.name,
+            size: f.size,
+            type: f.type,
+            url: f.url,
+            uploadedAt: f.uploadedAt,
+          })),
+          travelDetails: approvalType.includes('Travel')
+            ? {
+              purpose: title,
+              destination: group,
+              departureDate: deadline,
+              returnDate: deadline,
+              travelMode: 'Official Flight / Transport',
+              estimatedCost: amount,
+              justification: reason,
+            }
+            : undefined,
+          projectDetails: !approvalType.includes('Travel')
+            ? {
+              projectName: title,
+              domain: group,
+              projectRole: 'Lead Proposer',
+              duration: 'Project Lifecycle',
+              impact: reason,
+              keyDeliverables: details,
+            }
+            : undefined,
+        });
+
+        setIsSubmitting(false);
+        toast.success('Approval request submitted successfully!');
+        navigate('/my-nominations');
+      }
+    } catch (err: any) {
       setIsSubmitting(false);
-      toast.success('Approval request submitted successfully!');
-      navigate('/my-nominations');
-    }, 400);
+      console.error('Failed to submit approval request:', err);
+      toast.error(err?.message || 'Failed to submit approval request.');
+    }
   };
 
   return (
-    <div className="p-3.5 sm:p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-3.5 sm:p-6 space-y-6">
       {/* Title & Description matching HTML Prototype */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-            Create Approval Request
+            {isEditMode ? 'Modify Approval Request' : 'Create Approval Request'}
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Submit a formal expenditure, travel, or process approval request into the multi-stage corporate governance chain.
+            {isEditMode ? (
+              <>
+                Editing proposal{' '}
+                <span className="font-mono font-bold text-slate-800">
+                  {editReq?.number || editReq?.id}
+                </span>{' '}
+                (Revision v{editReq?.version || 1}). Resubmission will increment revision state and notify stakeholders.
+              </>
+            ) : (
+              'Submit a formal expenditure, travel, or process approval request into the multi-stage corporate governance chain.'
+            )}
           </p>
         </div>
+        {isEditMode && editReq && (
+          <span className="badge badge-clarify font-bold text-xs py-1 px-3">
+            {editReq.status}
+          </span>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6" noValidate>
@@ -573,17 +717,15 @@ export default function SelfNominationComponent() {
               <label htmlFor="f-deadline" className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Deadline Date <span className="text-rose-500">*</span>
               </label>
-              <input
+              <DatePicker
                 id="f-deadline"
-                type="date"
-                min={getMinDeadlineDate(2)}
+                minDate={getMinDeadlineDate(2)}
                 value={deadline}
-                onChange={(e) => {
-                  setDeadline(e.target.value);
+                onChange={(d) => {
+                  setDeadline(d);
                   if (errors.deadline) setErrors((prev) => ({ ...prev, deadline: '' }));
                 }}
-                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.deadline ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
-                  }`}
+                className={`py-2.5 ${errors.deadline ? 'border-rose-400 focus:ring-rose-200' : ''}`}
               />
               <p className="text-[11px] text-slate-400 mt-1">Minimum 2 business days required.</p>
               {errors.deadline && <p className="text-[11px] text-rose-600">{errors.deadline}</p>}
@@ -693,15 +835,27 @@ export default function SelfNominationComponent() {
           >
             {isSubmitting ? (
               <i className="fa-solid fa-circle-notch fa-spin"></i>
+            ) : isEditMode ? (
+              <i className="fa-solid fa-arrow-up-from-bracket"></i>
             ) : (
               <i className="fa-solid fa-paper-plane"></i>
             )}
-            <span>Submit For Approval</span>
+            <span>
+              {isEditMode
+                ? `Resubmit Request (v${(editReq?.version || 1) + 1})`
+                : 'Submit For Approval'}
+            </span>
           </button>
 
           <button
             type="button"
-            onClick={() => navigate('/my-nominations')}
+            onClick={() => {
+              if (isEditMode && editReq) {
+                navigate(`/my-nominations/${editReq.number || editReq.id}`);
+              } else {
+                navigate('/my-nominations');
+              }
+            }}
             className="px-5 py-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs transition cursor-pointer"
           >
             Cancel

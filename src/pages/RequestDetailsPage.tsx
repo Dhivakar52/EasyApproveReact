@@ -2,7 +2,9 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { nominationService, APPROVERS_BY_GROUP, GROUPS_LIST } from "../services/nominationService";
 import type Nomination from "../dataTypes/nomination";
+import { DatePicker } from "@/components/ui/date-picker";
 import { toast } from "sonner";
+import { formatDateDDMMYYYY, parseDate } from "@/lib/utils";
 
 // Format currency in INR
 function fmtINR(val: any): string {
@@ -13,31 +15,18 @@ function fmtINR(val: any): string {
 // Format date helper
 function fmtDate(val: any): string {
   if (!val) return "—";
-  try {
-    const d = new Date(val);
-    if (isNaN(d.getTime())) return String(val);
-    return d.toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  } catch {
-    return String(val);
-  }
+  const formatted = formatDateDDMMYYYY(val);
+  return formatted || String(val);
 }
 
 // Format date-time helper
 function fmtDateTime(val: any): string {
   if (!val) return "—";
   try {
-    const d = new Date(val);
-    if (isNaN(d.getTime())) return String(val);
+    const d = parseDate(val);
+    if (!d) return String(val);
     return (
-      d.toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }) +
+      formatDateDDMMYYYY(d) +
       " " +
       d.toLocaleTimeString("en-IN", {
         hour: "2-digit",
@@ -93,13 +82,17 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
 
   const [approveRemarks, setApproveRemarks] = useState<string>("");
   const [approveError, setApproveError] = useState<string>("");
+  const [isSubmittingApprove, setIsSubmittingApprove] = useState<boolean>(false);
 
   const [rejectReason, setRejectReason] = useState<string>("");
   const [rejectFiles, setRejectFiles] = useState<File[]>([]);
   const [rejectError, setRejectError] = useState<string>("");
+  const [isSubmittingReject, setIsSubmittingReject] = useState<boolean>(false);
 
   const [clarifyText, setClarifyText] = useState<string>("");
+  const [clarifyComments, setClarifyComments] = useState<string>("");
   const [clarifyError, setClarifyError] = useState<string>("");
+  const [isSubmittingClarify, setIsSubmittingClarify] = useState<boolean>(false);
 
   // Reassign state
   const [reassignGroup, setReassignGroup] = useState<string>("");
@@ -108,6 +101,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
   const [reassignDeadline, setReassignDeadline] = useState<string>(minDeadlineISO());
   const [reassignReason, setReassignReason] = useState<string>("");
   const [reassignErrors, setReassignErrors] = useState<Record<string, string>>({});
+  const [isSubmittingReassign, setIsSubmittingReassign] = useState<boolean>(false);
 
   // Withdraw state
   const [withdrawReason, setWithdrawReason] = useState<string>("");
@@ -278,7 +272,9 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       setApproveError("Please enter approval remarks.");
       return;
     }
+    setIsSubmittingApprove(true);
     const res = nominationService.wfApprove(req.id, approveRemarks.trim());
+    setIsSubmittingApprove(false);
     if (res.success) {
       setModalType(null);
       toast.success(
@@ -297,8 +293,10 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       setRejectError("Please provide a clear rejection reason.");
       return;
     }
+    setIsSubmittingReject(true);
     const filesMeta = rejectFiles.map((f) => ({ name: f.name, size: f.size }));
     const res = nominationService.wfReject(req.id, rejectReason.trim(), filesMeta);
+    setIsSubmittingReject(false);
     if (res.success) {
       setModalType(null);
       toast.error(`Request ${req.number || req.id} has been rejected.`);
@@ -315,9 +313,14 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       setClarifyError("Please enter your clarification inquiry.");
       return;
     }
-    const res = nominationService.wfClarify(req.id, clarifyText.trim());
+    setIsSubmittingClarify(true);
+    const res = nominationService.wfClarify(req.id, clarifyText.trim(), clarifyComments.trim());
+    setIsSubmittingClarify(false);
     if (res.success) {
       setModalType(null);
+      setClarifyText("");
+      setClarifyComments("");
+      setClarifyError("");
       toast.warning(`Clarification requested from ${req.nominee || "requester"}.`);
       loadData();
     } else {
@@ -361,6 +364,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       return;
     }
 
+    setIsSubmittingReassign(true);
     const res = nominationService.wfReassign(req.id, {
       group: reassignGroup,
       email: reassignEmail,
@@ -368,6 +372,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       deadline: reassignDeadline,
       reason: reassignReason.trim(),
     });
+    setIsSubmittingReassign(false);
 
     if (res.success) {
       setModalType(null);
@@ -588,6 +593,11 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
             <div className="text-xs sm:text-sm mt-1.5 text-amber-800 whitespace-pre-wrap leading-relaxed">
               {req.clarification.text}
             </div>
+            {req.clarification.comments && (
+              <div className="mt-2 pt-2 border-t border-amber-200/60 text-xs text-amber-800/90 whitespace-pre-wrap leading-relaxed">
+                <span className="font-semibold text-amber-900">Additional Comments:</span> {req.clarification.comments}
+              </div>
+            )}
           </div>
         )}
 
@@ -677,7 +687,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 Justification
               </h2>
               <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                {req.nominationType || "Project"}
+                {req.type || req.category || "—"}
               </span>
             </div>
 
@@ -703,7 +713,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2 border-t border-slate-100 text-xs">
                 <div>
                   <span className="text-slate-500 font-medium block">Approval Category</span>
-                  <span className="font-bold text-slate-800">{req.nominationType || "Corporate Expense"}</span>
+                  <span className="font-bold text-slate-800">{req.type || req.category || "—"}</span>
                 </div>
                 <div>
                   <span className="text-slate-500 font-medium block">Initial Submission Date</span>
@@ -1027,6 +1037,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   type="button"
                   onClick={() => {
                     setClarifyText("");
+                    setClarifyComments("");
                     setClarifyError("");
                     setModalType("clarify");
                   }}
@@ -1224,15 +1235,23 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 <button
                   type="button"
                   onClick={() => setModalType(null)}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  disabled={isSubmittingApprove}
+                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition"
+                  disabled={isSubmittingApprove}
+                  className="px-5 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  Confirm Approval
+                  {isSubmittingApprove ? (
+                    <>
+                      <i className="fa-solid fa-spinner fa-spin"></i> Approving...
+                    </>
+                  ) : (
+                    "Confirm Approval"
+                  )}
                 </button>
               </div>
             </form>
@@ -1302,15 +1321,23 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 <button
                   type="button"
                   onClick={() => setModalType(null)}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  disabled={isSubmittingReject}
+                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition"
+                  disabled={isSubmittingReject}
+                  className="px-5 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  Confirm Rejection
+                  {isSubmittingReject ? (
+                    <>
+                      <i className="fa-solid fa-spinner fa-spin"></i> Rejecting...
+                    </>
+                  ) : (
+                    "Confirm Rejection"
+                  )}
                 </button>
               </div>
             </form>
@@ -1341,9 +1368,26 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 resubmitted.
               </p>
 
+              {/* Existing field: Comments / Information */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                   Comments / Information that must be added or modified
+                </label>
+                <textarea
+                  value={clarifyComments}
+                  onChange={(e) => {
+                    setClarifyComments(e.target.value);
+                  }}
+                  rows={3}
+                  placeholder="Specify the missing vendor quotes, invoice details, or budget breakdowns..."
+                  className="w-full text-sm border border-slate-300 rounded-xl p-3 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                />
+              </div>
+
+              {/* Final Clarification text area styled like existing Comments UI */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Clarification Instructions / Inquiry <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   value={clarifyText}
@@ -1351,9 +1395,9 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                     setClarifyText(e.target.value);
                     setClarifyError("");
                   }}
-                  rows={4}
-                  placeholder="Specify the missing vendor quotes, invoice details, or budget breakdowns..."
-                  className="w-full text-sm border border-slate-300 rounded-xl p-3 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                  rows={3}
+                  placeholder="Enter specific clarification instructions for the requester..."
+                  className="w-full text-sm bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-800 placeholder-slate-400 focus:bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition"
                   required
                 />
                 {clarifyError && <p className="text-xs text-rose-600 mt-1">{clarifyError}</p>}
@@ -1363,15 +1407,23 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 <button
                   type="button"
                   onClick={() => setModalType(null)}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  disabled={isSubmittingClarify}
+                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition"
+                  disabled={isSubmittingClarify}
+                  className="px-5 py-2 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  Send Clarification Inquiry
+                  {isSubmittingClarify ? (
+                    <>
+                      <i className="fa-solid fa-spinner fa-spin"></i> Submitting...
+                    </>
+                  ) : (
+                    "Send Clarification Inquiry"
+                  )}
                 </button>
               </div>
             </form>
@@ -1479,13 +1531,12 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                   Revised Approval Cutoff Date <span className="text-rose-500">*</span>
                 </label>
-                <input
-                  type="date"
+                <DatePicker
                   value={reassignDeadline}
-                  min={minDeadlineISO()}
-                  onChange={(e) => setReassignDeadline(e.target.value)}
-                  className="w-full text-xs border border-slate-300 rounded-lg p-2.5 bg-white outline-none focus:border-indigo-600"
-                  required
+                  minDate={minDeadlineISO()}
+                  onChange={(d) => setReassignDeadline(d)}
+                  placeholder="Select cutoff date"
+                  className={reassignErrors.deadline ? "border-rose-400" : ""}
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
                   Minimum 3 business days required (earliest: {fmtDate(minDeadlineISO())}).
@@ -1517,15 +1568,23 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 <button
                   type="button"
                   onClick={() => setModalType(null)}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  disabled={isSubmittingReassign}
+                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition"
+                  disabled={isSubmittingReassign}
+                  className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  Confirm Reassignment
+                  {isSubmittingReassign ? (
+                    <>
+                      <i className="fa-solid fa-spinner fa-spin"></i> Reassigning...
+                    </>
+                  ) : (
+                    "Confirm Reassignment"
+                  )}
                 </button>
               </div>
             </form>

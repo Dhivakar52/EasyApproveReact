@@ -1,4 +1,3 @@
-// src/App.tsx
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './layout/Layout';
@@ -8,9 +7,6 @@ import SelfNominationPage from './pages/SelfNominationPage';
 import NominationPage from './pages/NominationPage';
 import AddNomination from './components/NominationContent/AddNomination';
 import ApprovalComponent from './components/ManagerPage/ApprovalComponent';
-import BusinessJury from './components/Jury/BusinessJury';
-import PresidentLevel from './components/PresidentLevel/PresidentLevel';
-import PresidentUnit from './components/PresidentUnitLevel/PresidentUnit';
 import AdminInner from './components/AdminSetting/AdminInner';
 import AwardCategories from './components/AdminSetting/AwardCategories';
 import EntitiesDepartments from './components/AdminSetting/EntitiesDepartments';
@@ -19,7 +15,6 @@ import JuryRoleMapping from './components/AdminSetting/JuryRoleMapping';
 import RoleAccessLevels from './components/AdminSetting/RoleAccessLevels';
 import NominationCycleMaster from './components/AdminSetting/NominationCycleMaster';
 import JuryPanelSetup from './components/AdminSetting/JuryPanelSetup';
-import AwardManagement from './components/Award/AwardManagement';
 import ProfileCardPage from './pages/ProfileCardPage';
 import RequestDetailsPage from './pages/RequestDetailsPage';
 import ModifyRequestPage from './pages/ModifyRequestPage';
@@ -27,37 +22,33 @@ import Login from './pages/auth/Login/LoginPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from './components/ui/sonner';
-import type { UserRole } from './dataTypes/roles';
+import { type UserRole, normalizeRole } from './dataTypes/roles';
 import { getAllowedRoles } from './config/menu.config';
 import { adminSubPageRoles } from './routes/routes.config';
 
 // -------------------------
-// Main page components
+// Main page components (Restricted to User and Admin)
 // -------------------------
-const pageComponents: Record<string, React.ReactNode> = {
-  Home: <HomePage />,
-  Notifications: <NotificationsPage />,
-  'Self Nominations': <SelfNominationPage />,
-  'My Nominations': <NominationPage />,
-  Approvals: <ApprovalComponent />,
-  'Business Jury': <BusinessJury />,
-  'President Unit': <PresidentUnit />,
-  'President Level': <PresidentLevel />,
-  'Award Management': <AwardManagement />,
-  'Admin Setting': <AdminInner />,
+const pageComponents: Record<string, React.ComponentType> = {
+  Home: HomePage,
+  Notifications: NotificationsPage,
+  'Self Nominations': SelfNominationPage,
+  'My Nominations': NominationPage,
+  Approvals: ApprovalComponent,
+  'Admin Setting': AdminInner,
 };
 
 // -------------------------
 // Admin sub-pages
 // -------------------------
-const adminSubPages: Record<string, React.ReactNode> = {
-  'award-categories': <AwardCategories />,
-  'entities-departments': <EntitiesDepartments />,
-  'nomination-cycle': <NominationCycleMaster />,
-  'jury-panel-setup': <JuryPanelSetup />,
-  'jury-evaluation-settings': <JuryEvaluationConfiguration />,
-  'jury-role-mapping': <JuryRoleMapping />,
-  'role-list': <RoleAccessLevels />,
+const adminSubPages: Record<string, React.ComponentType> = {
+  'award-categories': AwardCategories,
+  'entities-departments': EntitiesDepartments,
+  'nomination-cycle': NominationCycleMaster,
+  'jury-panel-setup': JuryPanelSetup,
+  'jury-evaluation-settings': JuryEvaluationConfiguration,
+  'jury-role-mapping': JuryRoleMapping,
+  'role-list': RoleAccessLevels,
 };
 
 // -------------------------
@@ -67,7 +58,8 @@ const App: React.FC = () => {
   const [userRole, setUserRole] = useState<UserRole | null | undefined>(undefined);
 
   useEffect(() => {
-    const storedRole = localStorage.getItem('userRole') as UserRole | null;
+    const rawRole = localStorage.getItem('userRole');
+    const storedRole = rawRole ? normalizeRole(rawRole) : null;
     setUserRole(storedRole);
   }, []);
 
@@ -84,7 +76,7 @@ const App: React.FC = () => {
           {/* Protected routes wrapped in Layout */}
           <Route element={<Layout />}>
             {/* Main pages */}
-            {Object.entries(pageComponents).map(([label, component]) => {
+            {Object.entries(pageComponents).map(([label, Component]) => {
               const path = '/' + label.toLowerCase().replace(/\s+/g, '-');
               const allowedRoles = getAllowedRoles(label);
 
@@ -94,7 +86,7 @@ const App: React.FC = () => {
                   path={path}
                   element={
                     <ProtectedRoute userRole={userRole} allowedRoles={allowedRoles}>
-                      {component}
+                      <Component />
                     </ProtectedRoute>
                   }
                 />
@@ -152,14 +144,55 @@ const App: React.FC = () => {
             />
 
             {/* Inner Pages: Request Details & Modify */}
-            <Route path="/request/:id" element={<RequestDetailsPage />} />
-            <Route path="/requests/:id" element={<RequestDetailsPage />} />
-            <Route path="/my-nominations/:id" element={<RequestDetailsPage mode="my-requests" />} />
-            <Route path="/approvals/:id" element={<RequestDetailsPage mode="approvals" />} />
-            <Route path="/modify/:id" element={<ModifyRequestPage />} />
+            <Route
+              path="/request/:id"
+              element={
+                <ProtectedRoute userRole={userRole} allowedRoles={['user', 'admin']}>
+                  <RequestDetailsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/requests/:id"
+              element={
+                <ProtectedRoute userRole={userRole} allowedRoles={['user', 'admin']}>
+                  <RequestDetailsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/my-nominations/:id"
+              element={
+                <ProtectedRoute userRole={userRole} allowedRoles={['user', 'admin']}>
+                  <RequestDetailsPage mode="my-requests" />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/approvals/:id"
+              element={
+                <ProtectedRoute userRole={userRole} allowedRoles={['user', 'admin']}>
+                  <RequestDetailsPage mode="approvals" />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/modify/:id"
+              element={
+                <ProtectedRoute userRole={userRole} allowedRoles={['user', 'admin']}>
+                  <ModifyRequestPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Obsolete Role Route Redirects */}
+            <Route path="/business-jury" element={<Navigate to="/approvals" replace />} />
+            <Route path="/president-unit" element={<Navigate to="/approvals" replace />} />
+            <Route path="/president-level" element={<Navigate to="/approvals" replace />} />
+            <Route path="/award-management" element={<Navigate to="/home" replace />} />
 
             {/* Admin sub-pages */}
-            {Object.entries(adminSubPages).map(([slug, component]) => (
+            {Object.entries(adminSubPages).map(([slug, Component]) => (
               <Route
                 key={slug}
                 path={`/admin-setting/${slug}`}
@@ -168,7 +201,7 @@ const App: React.FC = () => {
                     userRole={userRole}
                     allowedRoles={adminSubPageRoles[slug]}
                   >
-                    {component}
+                    <Component />
                   </ProtectedRoute>
                 }
               />

@@ -25,7 +25,7 @@ const NotificationPage = () => {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 p-5">
       {/* Page Header matching HTML prototype */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>

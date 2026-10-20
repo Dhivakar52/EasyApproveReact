@@ -1,5 +1,5 @@
 import type Nomination from "@/dataTypes/nomination";
-import type { NominationStatus, NominationType, ReassignmentRecord } from "@/dataTypes/nomination";
+import type { NominationStatus, NominationType, ReassignmentRecord, ClarificationRecord } from "@/dataTypes/nomination";
 import { MOCK_NOMINATIONS } from "@/mocks/nominations.mock";
 import { MOCK_NOTIFICATIONS, type SystemNotification } from "@/mocks/notifications.mock";
 
@@ -27,34 +27,58 @@ const buildSeedNominations = (): Nomination[] => {
   return MOCK_NOMINATIONS.map((item, index) => {
     const isProject = index % 2 === 0;
     const deptMatch = DEPARTMENTS.find((d) => d.toLowerCase().includes(item.entity.toLowerCase())) || "SRM Tech";
+    const seedCat = ["Expense Request", "Travel Request", "Process Change", "Creative Approval", "Other"][index % 5];
     const type: NominationType = isProject ? "Project" : "Travel Expenses";
+
+    // Set realistic demo assignments
+    let reqName = item.nominee;
+    let reqEmail = `${item.nominee.toLowerCase().replace(/\s+/g, "")}${index}@srmtech.com`;
+    let appName = "Karthik Subramanian";
+    let appEmail = "karthik.subramanian@srmtech.com";
+
+    if (index === 0 || index === 2 || index === 5 || index === 8) {
+      reqName = "Demo User";
+      reqEmail = "user@srmtech.com";
+      appName = "Demo Admin";
+      appEmail = "admin@srmtech.com";
+    } else if (index === 1 || index === 4 || index === 7) {
+      reqName = "Priya Nair";
+      reqEmail = "priya.nair@srmtech.com";
+      appName = "Demo User";
+      appEmail = "user@srmtech.com";
+    } else if (index === 3 || index === 6) {
+      reqName = "Vikram Seth";
+      reqEmail = "vikram.seth@srmtech.com";
+      appName = "Demo Admin";
+      appEmail = "admin@srmtech.com";
+    }
 
     return {
       id: item.id,
       number: item.id,
       title: isProject
-        ? `${item.category} Initiative - Phase ${index + 1}`
-        : `${item.category} Travel Claim & Field Study`,
-      nominee: item.nominee,
+        ? `${seedCat} - Phase ${index + 1}`
+        : `${seedCat} - Field Assessment`,
+      nominee: reqName,
       department: deptMatch,
       entity: item.entity,
-      category: item.category,
+      category: seedCat,
       nominationType: type,
-      type: isProject ? (index % 3 === 0 ? "Expense Request" : "Process Change") : "Travel Request",
+      type: seedCat,
       amount: isProject ? 350000 + (index * 25000) : 28500 + (index * 4200),
       deadline: `2026-10-${22 + (index % 8)}`,
-      approverName: index % 2 === 0 ? "Dr. Arun Kumar" : "Karthik Subramanian",
-      approverEmail: index % 2 === 0 ? "arun.kumar.hospital@example.com" : "karthik.subramanian@srmtech.com",
-      requesterName: item.nominee,
-      requesterEmail: `${item.nominee.toLowerCase().replace(/\s+/g, "")}${index}@srmtech.com`,
+      approverName: appName,
+      approverEmail: appEmail,
+      requesterName: reqName,
+      requesterEmail: reqEmail,
       createdAt: `2026-10-${10 + (index % 10)}`,
       submittedDate: `07/${15 + (index % 15)}/2025`,
-      assignedEmployee: index % 2 === 0 ? "Dr. Arun Kumar" : "Karthik Subramanian",
+      assignedEmployee: appName,
       status: item.status,
       progress: item.progress,
       mobileNumber: `+91 9845${index} 7612${index % 10}`,
-      nomineeEmail: `${item.nominee.toLowerCase().replace(/\s+/g, "")}${index}@srm.edu`,
-      managerEmail: index % 2 === 0 ? "arun.kumar.hospital@example.com" : "karthik.subramanian@srmtech.com",
+      nomineeEmail: reqEmail,
+      managerEmail: appEmail,
       referrals: ["sathishkumar312@srm.com", "kumaran@srm.com", "manikandan@srm.com"],
       supportingDocuments: [
         {
@@ -106,8 +130,9 @@ const normalizeNomination = (item: Nomination, index: number = 0): Nomination =>
     ...item,
     number: reqNumber,
     version: reqVersion,
-    title: item.title || `${item.category} Request`,
-    type: item.type || item.category || (item.nominationType === "Travel Expenses" ? "Travel Request" : "Expense Request"),
+    title: item.title || (item.type || item.category ? `${item.type || item.category} Request` : "Approval Request"),
+    category: item.type || item.category || "",
+    type: item.type || item.category || "",
     amount: reqAmount,
     amountBudgeted: reqBudget,
     budgetAllocated: reqBudget,
@@ -593,6 +618,7 @@ export const nominationService = {
   wfClarify(
     nominationId: string,
     text: string,
+    comments?: string,
     reviewerName: string = "Dr. Priya Nair"
   ): { success: boolean; nomination?: Nomination; error?: string } {
     const list = this.getNominations();
@@ -604,27 +630,37 @@ export const nominationService = {
     const current = list[index];
     const nowTs = Date.now();
 
+    const noteContent = comments
+      ? `Inquiry: ${text}\nComments: ${comments}`
+      : text;
+
     const updatedTimeline = [
       ...(current.timeline || []),
       {
         at: nowTs,
         by: reviewerName,
         action: "Clarification Requested",
-        note: text,
+        note: noteContent,
         status: "Clarification Required",
       },
     ];
 
+    const prevClarifications = current.clarifications || (current.clarification ? [current.clarification] : []);
+    const newClarificationRecord: ClarificationRecord = {
+      by: reviewerName,
+      email: current.approverEmail || "",
+      at: nowTs,
+      text,
+      comments: comments || "",
+      revision: current.version || 1,
+      answeredAt: null,
+    };
+
     const updated: Nomination = {
       ...current,
       status: "Clarification Required",
-      clarification: {
-        by: reviewerName,
-        email: current.approverEmail || "",
-        at: nowTs,
-        text,
-        revision: current.version || 1,
-      },
+      clarification: newClarificationRecord,
+      clarifications: [...prevClarifications, newClarificationRecord],
       timeline: updatedTimeline,
     };
 
@@ -930,6 +966,7 @@ export const APPROVERS_BY_GROUP: Record<string, Array<{ name: string; email: str
   ],
   "SRM Tech": [
     { name: "Karthik Subramanian", email: "karthik.subramanian@srmtech.com" },
+    { name: "Demo Admin", email: "admin@srmtech.com" },
     { name: "Demo User", email: "user@srmtech.com" },
     { name: "Vignesh Raj", email: "vignesh.raj@srmtech.com" }
   ],

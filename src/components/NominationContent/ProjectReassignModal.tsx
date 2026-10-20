@@ -36,13 +36,12 @@ export const ProjectReassignModal: React.FC<ProjectReassignModalProps> = ({
 
   if (!nomination) return null;
 
-  const currentRole = (localStorage.getItem("userRole") as UserRole) || "manager";
+  const currentRole = (localStorage.getItem("userRole") as UserRole) || "user";
+  const userEmail = localStorage.getItem("userEmail") || "user@srmtech.com";
   const reassignedByName =
     currentRole === "admin"
-      ? "Administrator (admin@srm.edu)"
-      : currentRole === "manager"
-      ? "Manager Approver (prasath16@srm.com)"
-      : `${currentRole.toUpperCase()} (Authorized Approver)`;
+      ? "Administrator (admin@srmtech.com)"
+      : `Authorized Approver (${userEmail})`;
 
   const handleReassign = (e: React.FormEvent) => {
     e.preventDefault();

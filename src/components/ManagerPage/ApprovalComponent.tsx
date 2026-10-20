@@ -1,32 +1,20 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ColumnDef } from "@tanstack/react-table";
-import { UserCheck, Filter, X } from "lucide-react";
+import { UserCheck } from "lucide-react";
 import type Nomination from "@/dataTypes/nomination";
 import { nominationService } from "@/services/nominationService";
 import { DataTable } from "@/common/Datatable";
 import { Pagination } from "@/common/Pagination";
 import { TableSearch } from "@/common/TableSearch";
-import { ActionMenu } from "@/common/ActionMenu";
-import { DateRangeFilter } from "@/common/DateRangeFilter";
 import { TableToolbarActions } from "@/common/TableToolbarActions";
-import { exportToCsv } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
+import { exportToCsv, formatDateDDMMYYYY, parseDate } from "@/lib/utils";
 import { toast } from "@/components/ui/sonner";
 import { renderStatusBadge } from "@/components/NominationContent/NominationTable";
 
 const formatDate = (s?: string | number) => {
-  if (!s) return "";
-  try {
-    const d = new Date(s);
-    if (isNaN(d.getTime())) return String(s);
-    return d.toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  } catch {
-    return String(s);
-  }
+  return formatDateDDMMYYYY(s);
 };
 
 const getDaysLeft = (deadlineStr?: string) => {
@@ -68,9 +56,27 @@ const ApprovalComponent: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [showFilterDropdowns, setShowFilterDropdowns] = useState(false);
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [draftStatus, setDraftStatus] = useState("awaiting");
+  const [draftType, setDraftType] = useState("");
+  const [draftFromDate, setDraftFromDate] = useState("");
+  const [draftToDate, setDraftToDate] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(6);
+  const [pageSize, setPageSize] = useState(10);
+  const navigate = useNavigate();
+
+  const handleOpenDetails = (r: Nomination) => {
+    try {
+      sessionStorage.setItem(
+        "ea_nav_source",
+        JSON.stringify({ page: "approvals", label: "Approval List", url: "/approvals" })
+      );
+    } catch {}
+    navigate(`/approvals/${r.number || r.id}`);
+  };
+
+  const userRole = (localStorage.getItem("userRole") || "user").toLowerCase();
+  const userEmail = (localStorage.getItem("userEmail") || "user@srmtech.com").toLowerCase().trim();
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -82,13 +88,33 @@ const ApprovalComponent: React.FC = () => {
     };
   }, []);
 
+  // Filter nominations eligible for approval based on role, assigned approver, and workflow rules
+  const eligibleNominations = useMemo(() => {
+    return nominations.filter((r) => {
+      if (userRole === "admin") {
+        return true;
+      }
+      const apprEmail = (r.approverEmail || r.managerEmail || "").toLowerCase().trim();
+      const isApprover = apprEmail === userEmail;
+      const isReassignedToUser = (r.reassignments || []).some(
+        (re) => re.toEmail?.toLowerCase().trim() === userEmail
+      );
+      const isHistoryNewOwner = (r.reassignmentHistory || []).some(
+        (rh) => rh.newOwner?.toLowerCase().trim() === userEmail
+      );
+      return isApprover || isReassignedToUser || isHistoryNewOwner;
+    });
+  }, [nominations, userRole, userEmail]);
+
   // Filter nominations based on search, status, category, and date range
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const fromTime = fromDate ? new Date(fromDate).getTime() : 0;
-    const toTime = toDate ? new Date(toDate).getTime() + 864e5 : 0;
+    const fromD = parseDate(fromDate);
+    const toD = parseDate(toDate);
+    const fromTime = fromD ? fromD.getTime() : 0;
+    const toTime = toD ? toD.getTime() + 864e5 - 1 : 0;
 
-    return nominations.filter((r) => {
+    return eligibleNominations.filter((r) => {
       // 1. Status Filter
       if (statusFilter === "awaiting") {
         const active =
@@ -105,19 +131,16 @@ const ApprovalComponent: React.FC = () => {
 
       // 2. Type / Category Filter
       if (typeFilter) {
-        const itemType = (
-          r.type ||
-          r.category ||
-          (r.nominationType === "Project" ? "Expense Request" : "Travel Request")
-        ).toLowerCase();
+        const itemType = (r.type || r.category || "").toLowerCase();
         if (!itemType.includes(typeFilter.toLowerCase())) return false;
       }
 
       // 3. Date range filtering
       if (fromTime || toTime) {
         const itemDateStr = r.createdAt || r.submittedDate || r.deadline || "";
-        const itemTime = itemDateStr ? new Date(itemDateStr).getTime() : NaN;
-        if (!isNaN(itemTime)) {
+        const itemD = parseDate(itemDateStr);
+        if (itemD) {
+          const itemTime = itemD.getTime();
           if (fromTime && itemTime < fromTime) return false;
           if (toTime && itemTime > toTime) return false;
         }
@@ -143,9 +166,7 @@ const ApprovalComponent: React.FC = () => {
 
       return true;
     });
-  }, [nominations, search, statusFilter, typeFilter, fromDate, toDate]);
-
-  const navigate = useNavigate();
+  }, [eligibleNominations, search, statusFilter, typeFilter, fromDate, toDate]);
 
   // Reset page when filters change
   useEffect(() => {
@@ -153,20 +174,117 @@ const ApprovalComponent: React.FC = () => {
   }, [search, statusFilter, typeFilter, fromDate, toDate]);
 
   const hasActiveFilters =
-    search !== "" ||
     statusFilter !== "awaiting" ||
     typeFilter !== "" ||
     Boolean(fromDate) ||
     Boolean(toDate);
 
+  const activeFilterCount =
+    (statusFilter !== "awaiting" ? 1 : 0) +
+    (typeFilter !== "" ? 1 : 0) +
+    (fromDate || toDate ? 1 : 0);
+
+  const handleOpenFilterPanel = () => {
+    setDraftStatus(statusFilter);
+    setDraftType(typeFilter);
+    setDraftFromDate(fromDate);
+    setDraftToDate(toDate);
+    setIsFilterPanelOpen(true);
+  };
+
+  const handleApplyFilters = () => {
+    setStatusFilter(draftStatus);
+    setTypeFilter(draftType);
+    setFromDate(draftFromDate);
+    setToDate(draftToDate);
+    setCurrentPage(1);
+    setIsFilterPanelOpen(false);
+    toast.success("Filters applied successfully.");
+  };
+
   const handleResetFilters = () => {
-    setSearch("");
+    setDraftStatus("awaiting");
+    setDraftType("");
+    setDraftFromDate("");
+    setDraftToDate("");
     setStatusFilter("awaiting");
     setTypeFilter("");
     setFromDate("");
     setToDate("");
     setCurrentPage(1);
+    setIsFilterPanelOpen(false);
+    toast.info("Filters cleared.");
   };
+
+  const filterPanelContent = (
+    <div className="space-y-5 text-xs">
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+          Approval Status
+        </label>
+        <select
+          id="appr-status"
+          className="w-full text-xs py-2 px-3 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:border-[#08805e] focus:ring-2 focus:ring-[#08805e]/20 transition"
+          value={draftStatus}
+          onChange={(e) => setDraftStatus(e.target.value)}
+        >
+          <option value="awaiting">Active Backlog (Awaiting Action)</option>
+          <option value="">All Statuses</option>
+          {STATUS_OPTIONS.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+          Approval Category
+        </label>
+        <select
+          id="appr-type"
+          className="w-full text-xs py-2 px-3 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:border-[#08805e] focus:ring-2 focus:ring-[#08805e]/20 transition"
+          value={draftType}
+          onChange={(e) => setDraftType(e.target.value)}
+        >
+          <option value="">All Categories</option>
+          {APPROVAL_CATEGORIES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="pt-2 border-t border-slate-100">
+        <label className="block text-xs font-semibold text-slate-700 mb-2">
+          Submission Date Range
+        </label>
+        <div className="space-y-3">
+          <div>
+            <span className="text-[11px] text-slate-500 font-medium block mb-1">From Date</span>
+            <DatePicker
+              value={draftFromDate}
+              onChange={setDraftFromDate}
+              placeholder="Select start date"
+              allowClear
+            />
+          </div>
+          <div>
+            <span className="text-[11px] text-slate-500 font-medium block mb-1">To Date</span>
+            <DatePicker
+              value={draftToDate}
+              onChange={setDraftToDate}
+              placeholder="Select end date"
+              allowClear
+              minDate={draftFromDate}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const handleExport = () => {
     const exportData = filteredRows.map((r) => ({
@@ -180,13 +298,6 @@ const ApprovalComponent: React.FC = () => {
     }));
     exportToCsv(exportData, "approval-list.csv");
     toast.success("Approval list exported to CSV successfully.");
-  };
-
-  const handleOpenDetails = (r: Nomination) => {
-    try {
-      sessionStorage.setItem("ea_nav_source", JSON.stringify({ page: "approvals", label: "Approval List", url: "/approvals" }));
-    } catch {}
-    navigate(`/approvals/${r.number || r.id}`);
   };
 
   // TanStack columns matching exact prototype columns and ordering for Approval List
@@ -292,8 +403,8 @@ const ApprovalComponent: React.FC = () => {
                     {days === 0
                       ? "Due today"
                       : days === 1
-                      ? "Due tomorrow"
-                      : `Due in ${days} d`}
+                        ? "Due tomorrow"
+                        : `Due in ${days} d`}
                   </span>
                 </div>
               )}
@@ -313,22 +424,21 @@ const ApprovalComponent: React.FC = () => {
           const r = row.original;
           return (
             <div className="flex justify-end">
-              <ActionMenu
-                item={r}
-                triggerIcon={<i className="fa-solid fa-bars text-slate-600 text-sm"></i>}
-                actions={[
-                  {
-                    label: "Review & Decide",
-                    icon: <i className="fa-solid fa-eye text-blue-600 mr-2"></i>,
-                    onClick: () => handleOpenDetails(r),
-                  },
-                ]}
-              />
+              <button
+                type="button"
+                onClick={() => handleOpenDetails(r)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 hover:text-blue-800 border border-blue-200/60 transition shadow-xs cursor-pointer"
+                title="View complete details"
+              >
+                <i className="fa-solid fa-eye text-blue-600 text-[11px]"></i>
+                <span>View</span>
+              </button>
             </div>
           );
         },
       },
     ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
@@ -369,17 +479,16 @@ const ApprovalComponent: React.FC = () => {
               />
             </div>
 
-            <DateRangeFilter
-              fromDate={fromDate}
-              toDate={toDate}
-              onFromDateChange={setFromDate}
-              onToDateChange={setToDate}
-            />
-
             <TableToolbarActions
-              onOpenFilter={() => setShowFilterDropdowns((v) => !v)}
-              hasActiveFilters={hasActiveFilters}
+              isFilterOpen={isFilterPanelOpen}
+              onOpenFilter={handleOpenFilterPanel}
+              onCloseFilter={() => setIsFilterPanelOpen(false)}
+              onApplyFilters={handleApplyFilters}
               onClearFilters={handleResetFilters}
+              filterPanelTitle="Filter Approvals"
+              filterPanelContent={filterPanelContent}
+              hasActiveFilters={hasActiveFilters}
+              activeFilterCount={activeFilterCount}
               onExport={handleExport}
               exportTitle="Export Approvals CSV"
               onPrint={() => window.print()}
@@ -389,54 +498,6 @@ const ApprovalComponent: React.FC = () => {
             />
           </div>
         </div>
-
-        {/* Secondary Filter Row (toggleable via Filter icon or if filters active) */}
-        {(showFilterDropdowns || statusFilter !== "awaiting" || typeFilter !== "") && (
-          <div className="px-4 py-2.5 bg-slate-50/70 border-b border-slate-100 flex items-center gap-3 flex-wrap animate-in fade-in duration-100">
-            <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-              <Filter className="w-3.5 h-3.5 text-slate-400" />
-              <span>Filters:</span>
-            </div>
-            <select
-              id="appr-status"
-              className="text-xs py-1.5 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              aria-label="Filter by status"
-            >
-              <option value="awaiting">Active Backlog (Awaiting Action)</option>
-              <option value="">All Statuses</option>
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            <select
-              id="appr-type"
-              className="text-xs py-1.5 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              aria-label="Filter by request type"
-            >
-              <option value="">All Categories</option>
-              {APPROVAL_CATEGORIES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="text-xs text-rose-600 hover:text-rose-700 font-medium flex items-center gap-1 ml-auto cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" /> Clear Filters
-              </button>
-            )}
-          </div>
-        )}
 
         {/* Existing React DataTable Component */}
         <DataTable
@@ -459,7 +520,7 @@ const ApprovalComponent: React.FC = () => {
               totalRecords={filteredRows.length}
               onPageChange={setCurrentPage}
               onPageSizeChange={setPageSize}
-              pageSizeOptions={[6, 10, 20, 50]}
+              pageSizeOptions={[10, 25, 50, 100]}
             />
           </div>
         )}

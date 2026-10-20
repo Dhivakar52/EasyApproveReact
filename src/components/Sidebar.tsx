@@ -1,8 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   LogOut,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   Search,
   X,
@@ -23,7 +21,7 @@ export interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed,
   isMobileOpen,
-  onToggle,
+  onToggle: _onToggle,
   onMobileClose,
 }) => {
   const location = useLocation();
@@ -87,39 +85,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const showExpandedContent = !isCollapsed || isMobileOpen;
 
   const getUserDisplayName = () => {
-    if (!userRole) return 'Ravi Kumar';
-    switch (userRole) {
-      case 'admin':
-        return 'System Administrator';
-      case 'manager':
-        return 'Manager Approver';
-      case 'jury':
-        return 'Jury Member';
-      case 'presidentUnit':
-        return 'President Unit';
-      case 'presidentLevel':
-        return 'President Level';
-      default:
-        return 'Ravi Kumar';
-    }
+    if (userRole === 'admin') return 'System Administrator';
+    return 'Demo User';
   };
 
   const getUserInitials = () => {
-    if (!userRole) return 'RK';
-    switch (userRole) {
-      case 'admin':
-        return 'SA';
-      case 'manager':
-        return 'MA';
-      case 'jury':
-        return 'JM';
-      case 'presidentUnit':
-        return 'PU';
-      case 'presidentLevel':
-        return 'PL';
-      default:
-        return 'RK';
-    }
+    if (userRole === 'admin') return 'SA';
+    return 'DU';
   };
 
   return (
@@ -173,7 +145,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {/* Desktop collapse toggle */}
-          <button
+          {/* <button
             type="button"
             onClick={onToggle}
             className="hidden lg:flex items-center justify-center h-7 w-7 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
@@ -181,7 +153,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button>
+          </button> */}
         </div>
 
         {/* Menu Search */}
@@ -228,22 +200,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       type="button"
                       onClick={() => setSettingsOpen(!settingsOpen)}
                       title={isCollapsed && !isMobileOpen ? item.title : undefined}
-                      className={`flex items-center gap-2.5 w-full h-9 rounded-md text-xs font-medium transition-colors cursor-pointer ${
-                        isCollapsed && !isMobileOpen ? 'justify-center px-0' : 'px-3'
-                      } ${
-                        isActive
+                      className={`flex items-center gap-2.5 w-full h-9 rounded-md text-xs font-medium transition-colors cursor-pointer ${isCollapsed && !isMobileOpen ? 'justify-center px-0' : 'px-3'
+                        } ${isActive
                           ? 'text-slate-900 font-semibold bg-slate-100'
                           : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-                      }`}
+                        }`}
                     >
                       <Icon className="h-4 w-4 shrink-0 text-slate-500" />
                       {showExpandedContent && (
                         <>
                           <span className="truncate flex-1 text-left">{item.title}</span>
                           <ChevronDown
-                            className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
-                              settingsOpen ? 'rotate-180' : ''
-                            }`}
+                            className={`h-3.5 w-3.5 text-slate-400 transition-transform ${settingsOpen ? 'rotate-180' : ''
+                              }`}
                           />
                         </>
                       )}
@@ -259,11 +228,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               key={sub.title}
                               to={sub.url}
                               onClick={onMobileClose}
-                              className={`flex items-center gap-2 w-full h-8 px-2.5 rounded-md text-xs font-medium transition-colors ${
-                                isSubActive
+                              className={`flex items-center gap-2 w-full h-8 px-2.5 rounded-md text-xs font-medium transition-colors ${isSubActive
                                   ? 'shadow-xs font-semibold'
                                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-                              }`}
+                                }`}
                               style={isSubActive ? activeStyle : undefined}
                             >
                               <SubIcon className="h-3.5 w-3.5 shrink-0" />
@@ -284,13 +252,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   to={item.url}
                   onClick={onMobileClose}
                   title={isCollapsed && !isMobileOpen ? item.title : undefined}
-                  className={`flex items-center gap-2.5 w-full h-9 rounded-md text-xs font-medium transition-colors ${
-                    isCollapsed && !isMobileOpen ? 'justify-center px-0' : 'px-3'
-                  } ${
-                    isActive
+                  className={`flex items-center gap-2.5 w-full h-9 rounded-md text-xs font-medium transition-colors ${isCollapsed && !isMobileOpen ? 'justify-center px-0' : 'px-3'
+                    } ${isActive
                       ? 'shadow-xs font-semibold'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
-                  }`}
+                    }`}
                   style={isActive ? activeStyle : undefined}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
@@ -340,9 +306,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             type="button"
             onClick={handleLogout}
             title={isCollapsed && !isMobileOpen ? 'Log out' : undefined}
-            className={`flex items-center gap-2 w-full h-8 rounded-md text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer border border-slate-200/60 bg-white ${
-              isCollapsed && !isMobileOpen ? 'justify-center px-0' : 'px-2.5'
-            }`}
+            className={`flex items-center gap-2 w-full h-8 rounded-md text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer border border-slate-200/60 bg-white ${isCollapsed && !isMobileOpen ? 'justify-center px-0' : 'px-2.5'
+              }`}
           >
             <LogOut className="h-3.5 w-3.5 shrink-0" />
             {showExpandedContent && <span>Log out</span>}

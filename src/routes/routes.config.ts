@@ -55,29 +55,10 @@ export const getRoutes = (): AppRouteConfig[] => {
       protected: true,
     },
     {
-      path: "/business-jury",
-      name: "Business Jury",
-      protected: true,
-    },
-    {
-      path: "/president-unit",
-      name: "President Unit",
-      protected: true,
-    },
-    {
-      path: "/president-level",
-      name: "President Level",
-      protected: true,
-    },
-    {
-      path: "/award-management",
-      name: "Award Management",
-      protected: true,
-    },
-    {
       path: "/admin-setting",
       name: "Admin Setting",
       protected: true,
+      roles: ["admin"],
     },
     ...Object.entries(adminSubPageRoles).map(([slug, roles]) => ({
       path: `/admin-setting/${slug}`,

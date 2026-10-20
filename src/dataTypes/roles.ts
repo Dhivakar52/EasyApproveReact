@@ -1,9 +1,5 @@
 export const USER_ROLES = {
   USER: 'user',
-  MANAGER: 'manager',
-  JURY: 'jury',
-  PRESIDENT_UNIT: 'presidentUnit',
-  PRESIDENT_LEVEL: 'presidentLevel',
   ADMIN: 'admin',
 } as const;
 
@@ -15,39 +11,7 @@ export const ROLE_PAGES: Record<UserRole, string[]> = {
     'Notifications', 
     'Create Request', 'Self Nominations', 'Add Nomination', 
     'My Requests', 'My Nominations', 
-    'Profile Card'
-  ],
-  manager: [
-    'Dashboard', 'Home', 
-    'Notifications', 
-    'Create Request', 'Self Nominations', 'Add Nomination', 
-    'My Requests', 'My Nominations', 
     'Approval List', 'Approvals', 
-    'Profile Card'
-  ],
-  jury: [
-    'Dashboard', 'Home', 
-    'Notifications', 
-    'Create Request', 'Self Nominations', 'Add Nomination', 
-    'My Requests', 'My Nominations', 
-    'Approval List', 'Approvals', 
-    'Business Jury', 
-    'Profile Card'
-  ],
-  presidentUnit: [
-    'Dashboard', 'Home', 
-    'Notifications', 
-    'Create Request', 'Self Nominations', 'Add Nomination', 
-    'My Requests', 'My Nominations', 
-    'Approval List', 'Approvals', 
-    'President Unit', 
-    'Profile Card'
-  ],
-  presidentLevel: [
-    'Dashboard', 'Home', 
-    'Notifications', 
-    'Approval List', 'Approvals', 
-    'President Level', 
     'Profile Card'
   ],
   admin: [
@@ -56,8 +20,16 @@ export const ROLE_PAGES: Record<UserRole, string[]> = {
     'Create Request', 'Self Nominations', 'Add Nomination', 
     'My Requests', 'My Nominations', 
     'Approval List', 'Approvals', 
-    'Business Jury', 'President Unit', 'President Level', 
-    'Award Management', 'Admin Setting', 'Settings', 
+    'Admin Setting', 'Settings', 
     'Group & Users', 'Profile Card'
   ],
 };
+
+// Safe migration and mapping helper to ensure only user and admin are active
+export const normalizeRole = (role?: string | null): UserRole => {
+  if (!role) return USER_ROLES.USER;
+  const lower = role.toLowerCase().trim();
+  if (lower === 'admin') return USER_ROLES.ADMIN;
+  return USER_ROLES.USER;
+};
+

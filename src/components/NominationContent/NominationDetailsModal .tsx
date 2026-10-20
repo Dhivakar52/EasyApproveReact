@@ -54,20 +54,11 @@ const NominationDetailsModal: React.FC<NominationDetailsProps> = ({
   if (!nomination) return null;
 
   const currentRole = (localStorage.getItem("userRole") as UserRole) || "user";
-  const canApprove =
-    currentRole === "manager" ||
-    currentRole === "admin" ||
-    currentRole === "jury" ||
-    currentRole === "presidentUnit";
+  const canApprove = currentRole === "admin" || currentRole === "user";
 
   const handleUpdateStatus = (newStatus: NominationStatus) => {
     setIsUpdatingStatus(true);
-    const reviewerName =
-      currentRole === "admin"
-        ? "System Administrator"
-        : currentRole === "manager"
-        ? "Manager Approver"
-        : `${currentRole.toUpperCase()} Member`;
+    const reviewerName = currentRole === "admin" ? "System Administrator" : "Approver";
 
     nominationService.updateNominationStatus(
       nomination.id,

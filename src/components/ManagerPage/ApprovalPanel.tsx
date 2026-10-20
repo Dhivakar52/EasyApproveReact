@@ -53,13 +53,8 @@ const ApprovalPanel = ({
   // Retrieve full nomination details if stored in service
   const fullNomination = nominationService.getNominationById(nomination.id);
 
-  const currentRole = (localStorage.getItem("userRole") as UserRole) || "manager";
-  const reviewerName =
-    currentRole === "admin"
-      ? "Administrator"
-      : currentRole === "manager"
-      ? "Manager Approver"
-      : `${currentRole.toUpperCase()}`;
+  const currentRole = (localStorage.getItem("userRole") as UserRole) || "user";
+  const reviewerName = currentRole === "admin" ? "Administrator" : "Approver";
 
   const handleAction = (status: NominationStatus) => {
     setIsUpdating(true);

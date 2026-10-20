@@ -1,17 +1,17 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ColumnDef } from "@tanstack/react-table";
-import { UserCheck, Filter, X } from "lucide-react";
+import { UserCheck } from "lucide-react";
 import type Nomination from "@/dataTypes/nomination";
 import { nominationService } from "@/services/nominationService";
 import { DataTable } from "@/common/Datatable";
 import { Pagination } from "@/common/Pagination";
 import { TableSearch } from "@/common/TableSearch";
 import { ActionMenu } from "@/common/ActionMenu";
-import { DateRangeFilter } from "@/common/DateRangeFilter";
 import { TableToolbarActions } from "@/common/TableToolbarActions";
+import { DatePicker } from "@/components/ui/date-picker";
 import { toast } from "@/components/ui/sonner";
-import { exportToCsv } from "@/lib/utils";
+import { exportToCsv, formatDateDDMMYYYY, parseDate } from "@/lib/utils";
 
 interface NominationTableProps {
   nominations: Nomination[];
@@ -30,18 +30,7 @@ const formatINR = (n?: number | string) => {
 };
 
 const formatDate = (s?: string | number) => {
-  if (!s) return "";
-  try {
-    const d = new Date(s);
-    if (isNaN(d.getTime())) return String(s);
-    return d.toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  } catch {
-    return String(s);
-  }
+  return formatDateDDMMYYYY(s);
 };
 
 const getDaysLeft = (deadlineStr?: string) => {
@@ -127,10 +116,14 @@ const NominationTable: React.FC<NominationTableProps> = ({
   const [categoryFilter, setCategoryFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [showFilterDropdowns, setShowFilterDropdowns] = useState(false);
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [draftStatus, setDraftStatus] = useState("all");
+  const [draftCategory, setDraftCategory] = useState("");
+  const [draftFromDate, setDraftFromDate] = useState("");
+  const [draftToDate, setDraftToDate] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const navigate = useNavigate();
-  const [pageSize, setPageSize] = useState(6);
+  const [pageSize, setPageSize] = useState(10);
 
   const [withdrawTarget, setWithdrawTarget] = useState<Nomination | null>(null);
   const [withdrawReason, setWithdrawReason] = useState("");
@@ -175,19 +168,17 @@ const NominationTable: React.FC<NominationTableProps> = ({
 
   const matchCategory = (r: Nomination, cat: string) => {
     if (!cat) return true;
-    return (
-      r.category === cat ||
-      r.type === cat ||
-      (cat === "Expense Request" && r.nominationType === "Project") ||
-      (cat === "Travel Request" && r.nominationType === "Travel Expenses")
-    );
+    const itemCat = r.type || r.category || "";
+    return itemCat.toLowerCase() === cat.toLowerCase();
   };
 
   // Filter based on search query, statusFilter, categoryFilter, and date range
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const fromTime = fromDate ? new Date(fromDate).getTime() : 0;
-    const toTime = toDate ? new Date(toDate).getTime() + 864e5 : 0;
+    const fromD = parseDate(fromDate);
+    const toD = parseDate(toDate);
+    const fromTime = fromD ? fromD.getTime() : 0;
+    const toTime = toD ? toD.getTime() + 864e5 - 1 : 0;
 
     return nominations.filter((r) => {
       if (!matchStatus(r, statusFilter)) return false;
@@ -196,8 +187,9 @@ const NominationTable: React.FC<NominationTableProps> = ({
       // Date range filtering
       if (fromTime || toTime) {
         const itemDateStr = r.createdAt || r.submittedDate || r.deadline || "";
-        const itemTime = itemDateStr ? new Date(itemDateStr).getTime() : NaN;
-        if (!isNaN(itemTime)) {
+        const itemD = parseDate(itemDateStr);
+        if (itemD) {
+          const itemTime = itemD.getTime();
           if (fromTime && itemTime < fromTime) return false;
           if (toTime && itemTime > toTime) return false;
         }
@@ -223,29 +215,121 @@ const NominationTable: React.FC<NominationTableProps> = ({
   }, [search, statusFilter, categoryFilter, fromDate, toDate]);
 
   const hasActiveFilters =
-    search !== "" ||
     statusFilter !== "all" ||
     categoryFilter !== "" ||
     Boolean(fromDate) ||
     Boolean(toDate);
 
+  const activeFilterCount =
+    (statusFilter !== "all" ? 1 : 0) +
+    (categoryFilter !== "" ? 1 : 0) +
+    (fromDate || toDate ? 1 : 0);
+
+  const handleOpenFilterPanel = () => {
+    setDraftStatus(statusFilter);
+    setDraftCategory(categoryFilter);
+    setDraftFromDate(fromDate);
+    setDraftToDate(toDate);
+    setIsFilterPanelOpen(true);
+  };
+
+  const handleApplyFilters = () => {
+    setStatusFilter(draftStatus);
+    setCategoryFilter(draftCategory);
+    setFromDate(draftFromDate);
+    setToDate(draftToDate);
+    setCurrentPage(1);
+    setIsFilterPanelOpen(false);
+    toast.success("Filters applied successfully.");
+  };
+
   const handleResetFilters = () => {
-    setSearch("");
+    setDraftStatus("all");
+    setDraftCategory("");
+    setDraftFromDate("");
+    setDraftToDate("");
     setStatusFilter("all");
     setCategoryFilter("");
     setFromDate("");
     setToDate("");
     setCurrentPage(1);
+    setIsFilterPanelOpen(false);
+    toast.info("Filters cleared.");
   };
+
+  const filterPanelContent = (
+    <div className="space-y-5 text-xs">
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+          Approval Status
+        </label>
+        <select
+          className="w-full text-xs py-2 px-3 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:border-[#08805e] focus:ring-2 focus:ring-[#08805e]/20 transition"
+          value={draftStatus}
+          onChange={(e) => setDraftStatus(e.target.value)}
+        >
+          <option value="all">All Statuses</option>
+          <option value="pending">Pending Approvals</option>
+          <option value="clarification">Clarifications</option>
+          <option value="modify">Under Modification</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected / Withdrawn</option>
+          <option value="reassigned">Delegated</option>
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+          Approval Category
+        </label>
+        <select
+          className="w-full text-xs py-2 px-3 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:border-[#08805e] focus:ring-2 focus:ring-[#08805e]/20 transition"
+          value={draftCategory}
+          onChange={(e) => setDraftCategory(e.target.value)}
+        >
+          <option value="">All Categories</option>
+          <option value="Expense Request">Expense Request</option>
+          <option value="Travel Request">Travel Request</option>
+          <option value="Process Change">Process Change</option>
+          <option value="Creative Approval">Creative Approval</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <div className="pt-2 border-t border-slate-100">
+        <label className="block text-xs font-semibold text-slate-700 mb-2">
+          Submission Date Range
+        </label>
+        <div className="space-y-3">
+          <div>
+            <span className="text-[11px] text-slate-500 font-medium block mb-1">From Date</span>
+            <DatePicker
+              value={draftFromDate}
+              onChange={setDraftFromDate}
+              placeholder="Select start date"
+              allowClear
+            />
+          </div>
+          <div>
+            <span className="text-[11px] text-slate-500 font-medium block mb-1">To Date</span>
+            <DatePicker
+              value={draftToDate}
+              onChange={setDraftToDate}
+              placeholder="Select end date"
+              allowClear
+              minDate={draftFromDate}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const handleExport = () => {
     const exportData = filteredRows.map((r) => ({
       "Request Number": r.number || r.id,
       "Request Title": r.title,
-      "Type":
-        r.type ||
-        r.category ||
-        (r.nominationType === "Project" ? "Expense Request" : "Travel Request"),
+      "Type": r.type || r.category || "—",
       "Approver": r.approverName || r.assignedEmployee || "",
       "Approver Email": r.approverEmail || r.managerEmail || "",
       "Amount": r.amount || "",
@@ -350,11 +434,7 @@ const NominationTable: React.FC<NominationTableProps> = ({
           const r = row.original;
           return (
             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
-              {r.type ||
-                r.category ||
-                (r.nominationType === "Project"
-                  ? "Expense Request"
-                  : "Travel Request")}
+              {r.type || r.category || "—"}
             </span>
           );
         },
@@ -382,6 +462,15 @@ const NominationTable: React.FC<NominationTableProps> = ({
         cell: ({ row }) => (
           <span className="mono whitespace-nowrap font-bold text-slate-900">
             {formatINR(row.original.amount)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "createdAt",
+        header: "Creation Date",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs text-slate-600 whitespace-nowrap">
+            {formatDate(row.original.createdAt || row.original.submittedDate)}
           </span>
         ),
       },
@@ -527,17 +616,16 @@ const NominationTable: React.FC<NominationTableProps> = ({
               />
             </div>
 
-            <DateRangeFilter
-              fromDate={fromDate}
-              toDate={toDate}
-              onFromDateChange={setFromDate}
-              onToDateChange={setToDate}
-            />
-
             <TableToolbarActions
-              onOpenFilter={() => setShowFilterDropdowns((v) => !v)}
-              hasActiveFilters={hasActiveFilters}
+              isFilterOpen={isFilterPanelOpen}
+              onOpenFilter={handleOpenFilterPanel}
+              onCloseFilter={() => setIsFilterPanelOpen(false)}
+              onApplyFilters={handleApplyFilters}
               onClearFilters={handleResetFilters}
+              filterPanelTitle="Filter My Requests"
+              filterPanelContent={filterPanelContent}
+              hasActiveFilters={hasActiveFilters}
+              activeFilterCount={activeFilterCount}
               onExport={handleExport}
               exportTitle="Export Requests CSV"
               onPrint={() => window.print()}
@@ -547,52 +635,6 @@ const NominationTable: React.FC<NominationTableProps> = ({
             />
           </div>
         </div>
-
-        {/* Secondary Filter Row (toggleable via Filter icon or if filters active) */}
-        {(showFilterDropdowns || statusFilter !== "all" || categoryFilter !== "") && (
-          <div className="px-4 py-2.5 bg-slate-50/70 border-b border-slate-100 flex items-center gap-3 flex-wrap animate-in fade-in duration-100">
-            <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-              <Filter className="w-3.5 h-3.5 text-slate-400" />
-              <span>Filters:</span>
-            </div>
-            <select
-              className="text-xs py-1.5 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              aria-label="Filter by status"
-            >
-              <option value="all">All Statuses</option>
-              <option value="pending">Pending Approvals</option>
-              <option value="clarification">Clarifications</option>
-              <option value="modify">Under Modification</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected / Withdrawn</option>
-              <option value="reassigned">Delegated</option>
-            </select>
-            <select
-              className="text-xs py-1.5 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              aria-label="Filter by category"
-            >
-              <option value="">All Categories</option>
-              <option value="Expense Request">Expense Request</option>
-              <option value="Travel Request">Travel Request</option>
-              <option value="Process Change">Process Change</option>
-              <option value="Creative Approval">Creative Approval</option>
-              <option value="Other">Other</option>
-            </select>
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="text-xs text-rose-600 hover:text-rose-700 font-medium flex items-center gap-1 ml-auto cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" /> Clear Filters
-              </button>
-            )}
-          </div>
-        )}
 
         {/* Existing React DataTable Component matching dark navy header */}
         <DataTable
@@ -619,7 +661,7 @@ const NominationTable: React.FC<NominationTableProps> = ({
               totalRecords={filteredRows.length}
               onPageChange={setCurrentPage}
               onPageSizeChange={setPageSize}
-              pageSizeOptions={[6, 10, 20, 50]}
+              pageSizeOptions={[10, 25, 50, 100]}
             />
           </div>
         )}

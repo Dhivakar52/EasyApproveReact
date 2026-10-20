@@ -57,17 +57,8 @@ export const DashboardComponent: React.FC = () => {
   };
 
   const getUserDisplayName = () => {
-    if (!userRole) return 'Ravi Kumar';
-    switch (userRole) {
-      case 'admin':
-        return 'System Administrator';
-      case 'manager':
-        return 'Manager Approver';
-      case 'jury':
-        return 'Jury Member';
-      default:
-        return 'Ravi Kumar';
-    }
+    if (userRole === 'admin') return 'System Administrator';
+    return 'Demo User';
   };
 
   return (

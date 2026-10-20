@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import whiteLogo from "../../../assets/images/white-logo.png";
 import { USER_ROLES, type UserRole } from "../../../dataTypes/roles";
+import { toast } from "sonner";
 
 interface LoginProps {
   setUserRole: React.Dispatch<React.SetStateAction<UserRole | null | undefined>>;
@@ -27,55 +28,32 @@ export default function LoginPage({ setUserRole }: LoginProps) {
     setUserRole(targetRole);
 
     switch (targetRole) {
-      case USER_ROLES.MANAGER:
-        navigate("/approvals");
-        break;
-      case USER_ROLES.JURY:
-        navigate("/business-jury");
-        break;
-      case USER_ROLES.PRESIDENT_UNIT:
-        navigate("/president-unit");
-        break;
-      case USER_ROLES.PRESIDENT_LEVEL:
-        navigate("/president-level");
-        break;
       case USER_ROLES.ADMIN:
         navigate("/home");
         break;
+      case USER_ROLES.USER:
       default:
-        navigate("/home");
+        navigate("/my-nominations");
+        break;
     }
   };
 
   const resolveRole = (targetEmail: string, targetPassword?: string): UserRole | null => {
     const cleanEmail = targetEmail.trim().toLowerCase();
 
-    // Existing test accounts
+    // Standard user test accounts
     if (cleanEmail === "user@gmail.com" && (!targetPassword || targetPassword === "1" || targetPassword === "123")) {
       return USER_ROLES.USER;
-    }
-    if (cleanEmail === "manager@gmail.com" && (!targetPassword || targetPassword === "2" || targetPassword === "123")) {
-      return USER_ROLES.MANAGER;
-    }
-    if (cleanEmail === "jury@gmail.com" && (!targetPassword || targetPassword === "3" || targetPassword === "123")) {
-      return USER_ROLES.JURY;
-    }
-    if (cleanEmail === "presidentunit@gmail.com" && (!targetPassword || targetPassword === "4" || targetPassword === "123")) {
-      return USER_ROLES.PRESIDENT_UNIT;
-    }
-    if (cleanEmail === "presidentlevel@gmail.com" && (!targetPassword || targetPassword === "5" || targetPassword === "123")) {
-      return USER_ROLES.PRESIDENT_LEVEL;
     }
     if (cleanEmail === "admin@gmail.com" && (!targetPassword || targetPassword === "6" || targetPassword === "123")) {
       return USER_ROLES.ADMIN;
     }
 
     // Prototype accounts
-    if (cleanEmail === "admin@srmtech.com") return USER_ROLES.ADMIN;
-    if (cleanEmail === "user@srmtech.com") return USER_ROLES.USER;
-    if (cleanEmail.includes("admin")) return USER_ROLES.ADMIN;
-    if (cleanEmail.includes("manager")) return USER_ROLES.MANAGER;
-    if (cleanEmail.endsWith("@srmtech.com") || cleanEmail.endsWith("@srmtechnologies.com")) {
+    if (cleanEmail === "admin@srmtech.com" && (!targetPassword || targetPassword === "123")) return USER_ROLES.ADMIN;
+    if (cleanEmail === "user@srmtech.com" && (!targetPassword || targetPassword === "123")) return USER_ROLES.USER;
+    if (cleanEmail.includes("admin") && (!targetPassword || targetPassword === "123")) return USER_ROLES.ADMIN;
+    if ((cleanEmail.endsWith("@srmtech.com") || cleanEmail.endsWith("@srmtechnologies.com")) && (!targetPassword || targetPassword === "123")) {
       return USER_ROLES.USER;
     }
 
@@ -86,48 +64,68 @@ export default function LoginPage({ setUserRole }: LoginProps) {
     e.preventDefault();
     setError(null);
 
-    if (!email.trim()) {
-      setError("Please enter your official SRM email.");
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      setError("Enter your official SRM email address.");
+      return;
+    }
+
+    if (!cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+      setError("Enter a valid email address.");
       return;
     }
 
     if (!password) {
-      setError("Please enter your password.");
+      setError("Enter your password.");
       return;
     }
 
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
-      const role = resolveRole(email, password);
+      const role = resolveRole(cleanEmail, password);
       if (role) {
-        authenticateUser(email, role);
+        // Valid credentials -> Transition to Step 2 OTP Verification matching prototype
+        setStep("otp");
+        setOtp("1111");
+        setError(null);
+        toast.info("A verification OTP has been sent to your registered email address.");
       } else {
-        setError("Invalid credentials. Try using one-click demo accounts below or check your password.");
+        setError("Invalid email address or password.");
       }
-    }, 300);
+    }, 200);
   };
 
   const handleOtpSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (!otp.trim()) {
+    const cleanOtp = otp.trim();
+    if (!cleanOtp) {
       setError("Please enter the 4-digit OTP.");
       return;
     }
 
-    if (otp !== "1111" && otp.length !== 4) {
-      setError("Invalid OTP. Use demo verification code 1111.");
+    if (cleanOtp !== "1111") {
+      setError("Invalid OTP. Please enter the correct OTP.");
       return;
     }
 
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
-      const role = resolveRole(email) || USER_ROLES.USER;
-      authenticateUser(email || "user@srmtech.com", role);
-    }, 300);
+      const cleanEmail = email.trim().toLowerCase() || "user@srmtech.com";
+      const role = resolveRole(cleanEmail, password) || USER_ROLES.USER;
+      authenticateUser(cleanEmail, role);
+      toast.success("Welcome back! Signed in successfully.");
+    }, 200);
+  };
+
+  const handleResendOtp = () => {
+    const target = email.trim() || "user@srmtech.com";
+    setOtp("1111");
+    setError(null);
+    toast.info(`A verification OTP (1111) has been resent to ${target}.`);
   };
 
   const fillDemoAccount = (demoEmail: string, demoPwd: string = "123") => {
@@ -140,6 +138,7 @@ export default function LoginPage({ setUserRole }: LoginProps) {
     if (!email.trim()) {
       setEmail("user@srmtech.com");
     }
+    setOtp("1111");
     setError(null);
     setStep("otp");
   };
@@ -315,30 +314,14 @@ export default function LoginPage({ setUserRole }: LoginProps) {
                     onClick={() => fillDemoAccount("user@srmtech.com", "123")}
                     className="p-2 border border-slate-200 bg-white rounded-lg text-left text-xs font-medium hover:border-emerald-500 hover:bg-emerald-50/50 transition cursor-pointer flex items-center gap-1.5 text-slate-700"
                   >
-                    <i className="fa-solid fa-user text-emerald-600"></i> Requester
+                    <i className="fa-solid fa-user text-emerald-600"></i> User (Requester)
                   </button>
                   <button
                     type="button"
                     onClick={() => fillDemoAccount("admin@srmtech.com", "123")}
                     className="p-2 border border-slate-200 bg-white rounded-lg text-left text-xs font-medium hover:border-emerald-500 hover:bg-emerald-50/50 transition cursor-pointer flex items-center gap-1.5 text-slate-700"
                   >
-                    <i className="fa-solid fa-user-shield text-blue-600"></i> Admin Approver
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  <button
-                    type="button"
-                    onClick={() => fillDemoAccount("user@gmail.com", "1")}
-                    className="p-1.5 border border-slate-200 bg-white rounded-lg text-left text-[11px] font-medium hover:border-emerald-500 hover:bg-emerald-50/50 transition cursor-pointer text-slate-600"
-                  >
-                    user@gmail.com (1)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fillDemoAccount("manager@gmail.com", "2")}
-                    className="p-1.5 border border-slate-200 bg-white rounded-lg text-left text-[11px] font-medium hover:border-emerald-500 hover:bg-emerald-50/50 transition cursor-pointer text-slate-600"
-                  >
-                    manager@gmail.com (2)
+                    <i className="fa-solid fa-user-shield text-blue-600"></i> Admin (Approver)
                   </button>
                 </div>
                 <p className="mt-2.5 text-[11px] text-slate-400 leading-tight">
@@ -421,10 +404,10 @@ export default function LoginPage({ setUserRole }: LoginProps) {
                     Didn&apos;t receive code?{" "}
                     <button
                       type="button"
-                      onClick={() => setOtp("1111")}
+                      onClick={handleResendOtp}
                       className="text-emerald-700 font-semibold hover:underline cursor-pointer"
                     >
-                      Fill Demo OTP (1111)
+                      Resend OTP
                     </button>
                   </p>
                 </div>

@@ -3,6 +3,7 @@ import { X, UploadCloud, Paperclip } from 'lucide-react';
 import type Nomination from '@/dataTypes/nomination';
 import type { SupportingDocument } from '@/dataTypes/nomination';
 import { nominationService } from '@/services/nominationService';
+import { DatePicker } from '@/components/ui/date-picker';
 import { toast } from '@/components/ui/sonner';
 
 interface ModifyRequestModalProps {
@@ -176,11 +177,10 @@ export const ModifyRequestModal: React.FC<ModifyRequestModalProps> = ({
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Deadline Date
               </label>
-              <input
-                type="date"
+              <DatePicker
                 value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
-                className="w-full text-xs py-2.5 px-3 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 font-mono"
+                onChange={(d) => setDeadline(d)}
+                placeholder="Select deadline"
               />
             </div>
           </div>

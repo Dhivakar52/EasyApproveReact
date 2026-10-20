@@ -280,7 +280,7 @@ export function StandardModuleTable<TData extends Record<string, unknown>>({
             totalRecords={totalRecords}
             onPageChange={onPageChange}
             onPageSizeChange={onPageSizeChange}
-            pageSizeOptions={[5, 10, 20, 50]}
+            pageSizeOptions={[10, 25, 50, 100]}
           />
         </div>
       )}

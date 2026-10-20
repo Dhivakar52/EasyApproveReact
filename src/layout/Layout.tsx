@@ -23,7 +23,7 @@ const Layout: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      <Sidebar 
+      <Sidebar
         isCollapsed={sidebarCollapsed}
         isMobileOpen={mobileMenuOpen}
         onToggle={toggleSidebar}
@@ -31,10 +31,10 @@ const Layout: React.FC = () => {
       />
 
       <div className="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden min-w-0">
-        <Header 
+        <Header
           onToggleSidebar={toggleSidebar}
-          onMobileMenuToggle={toggleMobileMenu} 
-        />          
+          onMobileMenuToggle={toggleMobileMenu}
+        />
         <main className="flex-1 overflow-auto">
           <ErrorBoundary resetKeys={[location.pathname]}>
             <Outlet />

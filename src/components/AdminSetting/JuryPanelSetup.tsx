@@ -202,7 +202,7 @@ const JuryPanelSetup = () => {
               totalRecords={totalRecords}
               onPageChange={handlePageChange}
               onPageSizeChange={handlePageSizeChange}
-              pageSizeOptions={[5, 10, 20]}
+              pageSizeOptions={[10, 25, 50, 100]}
             />
           </div>
         </div>

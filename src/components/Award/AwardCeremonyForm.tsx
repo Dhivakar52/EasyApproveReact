@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Calendar, Clock, Eye, Save } from "lucide-react";
+import { Clock, Eye, Save } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
 
 interface AwardEvent {
   title: string;
@@ -88,16 +89,12 @@ const AwardCeremonyForm: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Event Date
               </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  name="date"
-                  value={form.date}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                />
-                <Calendar className="absolute right-3 top-2.5 w-5 h-5 text-gray-400 pointer-events-none" />
-              </div>
+              <DatePicker
+                value={form.date}
+                onChange={(d) => setForm((prev) => ({ ...prev, date: d }))}
+                placeholder="Select event date"
+                className="py-2.5"
+              />
             </div>
 
             {/* Event Time */}
