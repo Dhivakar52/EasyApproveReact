@@ -1,244 +1,177 @@
-import { useState, useMemo, useEffect } from "react";
-import type { ColumnDef } from "@tanstack/react-table";
-import { X } from "lucide-react";
-import { DataTable } from "@/common/Datatable";
-import { TableSearch } from "@/common/TableSearch";
-import { Pagination } from "@/common/Pagination";
-import CustomPanel from "@/common/CustomPanel";
-import TableToolbarActions from "@/common/TableToolbarActions";
-import { exportToCsv } from "@/lib/utils";
-import { Field, SelectField } from "@/components/FormPrimitives";
-import { useTable } from "@/hooks/useTable";
-import type { SystemNotification } from "@/mocks/notifications.mock";
-
-const getTypeColor = (type: string) => {
-  switch (type) {
-    case "Referral Request":
-      return "bg-blue-100 text-blue-700";
-    case "New Referral Request":
-      return "bg-purple-100 text-purple-700";
-    case "Nomination Approval Required":
-      return "bg-yellow-100 text-yellow-700";
-    case "Nomination Approved":
-      return "bg-green-100 text-green-700";
-    default:
-      return "bg-gray-100 text-gray-700";
-  }
-};
-
-const typeOptions = [
-  "Referral Request",
-  "New Referral Request",
-  "Nomination Approval Required",
-  "Nomination Approved",
-];
-
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { nominationService } from "@/services/nominationService";
+import type { SystemNotification } from "@/mocks/notifications.mock";
+import { toast } from "@/components/ui/sonner";
 
-const NotificationTable = () => {
+export const NotificationTable: React.FC = () => {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<SystemNotification[]>(() =>
     nominationService.getNotifications()
   );
+  const [filter, setFilter] = useState<"all" | "unread">("all");
+
+  const refreshNotifications = () => {
+    setNotifications(nominationService.getNotifications());
+  };
 
   useEffect(() => {
-    const handleUpdate = () => {
-      setNotifications(nominationService.getNotifications());
-    };
-    window.addEventListener("easyapprove_notifications_updated", handleUpdate);
+    refreshNotifications();
+    window.addEventListener("easyapprove_notifications_updated", refreshNotifications);
     return () => {
-      window.removeEventListener("easyapprove_notifications_updated", handleUpdate);
+      window.removeEventListener("easyapprove_notifications_updated", refreshNotifications);
     };
   }, []);
 
-  const {
-    search,
-    setSearch,
-    isFilterOpen,
-    openFilter,
-    closeFilter,
-    tempFilters,
-    appliedFilters,
-    setFilterField,
-    applyFilters,
-    resetFilters,
-    clearSingleFilter,
-    hasActiveFilters,
-    paginatedData,
-    totalRecords,
-    currentPage,
-    pageSize,
-    handlePageChange,
-    handlePageSizeChange,
-  } = useTable<SystemNotification>({
-    data: notifications,
-    searchFields: ["title", "message", "type"],
-    initialPageSize: 10,
-    filterPredicate: (item, filters) => {
-      if (filters.type && item.type.toLowerCase() !== filters.type.toLowerCase()) {
-        return false;
-      }
-      return true;
-    },
-  });
+  const unreadCount = notifications.filter((n) => !n.read).length;
+  const displayedList =
+    filter === "unread" ? notifications.filter((n) => !n.read) : notifications;
 
-  const columns = useMemo<ColumnDef<SystemNotification>[]>(
-    () => [
-      {
-        accessorKey: "type",
-        header: "Type",
-        cell: (info) => {
-          const type = String(info.getValue());
-          return (
-            <span
-              className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getTypeColor(
-                type
-              )}`}
-            >
-              {type}
-            </span>
-          );
-        },
-      },
-      {
-        accessorKey: "message",
-        header: "Message",
-        cell: (info) => (
-          <span className="text-sm text-gray-900">{String(info.getValue())}</span>
-        ),
-      },
-      {
-        accessorKey: "time",
-        header: "Time",
-        cell: (info) => (
-          <span className="text-sm text-gray-500 whitespace-nowrap">{String(info.getValue())}</span>
-        ),
-      },
-    ],
-    []
-  );
+  const handleMarkAsRead = (id?: string) => {
+    if (!id) return;
+    nominationService.markNotificationRead(id);
+    toast.success("Notification marked as read.");
+  };
+
+  const handleViewDetails = (notif: SystemNotification) => {
+    const reqId = notif.requestId;
+    if (!reqId) {
+      toast.info("No linked request found for this notification.");
+      return;
+    }
+
+    const isApprovalRelated =
+      notif.type?.toLowerCase().includes("approval required") ||
+      notif.type?.toLowerCase().includes("referral request") ||
+      notif.title?.toLowerCase().includes("approval") ||
+      notif.title?.toLowerCase().includes("delegated") ||
+      notif.title?.toLowerCase().includes("clarification needed");
+
+    try {
+      sessionStorage.setItem(
+        "ea_nav_source",
+        JSON.stringify({
+          page: "notifications",
+          label: "Notifications",
+          url: "/notifications",
+        })
+      );
+    } catch {}
+
+    if (isApprovalRelated) {
+      navigate(`/approvals/${reqId}`);
+    } else {
+      navigate(`/my-nominations/${reqId}`);
+    }
+  };
+
+  const getNotifIcon = (notif: SystemNotification) => {
+    const text = (notif.type + " " + notif.title).toLowerCase();
+    if (text.includes("reminder") || text.includes("deadline")) return "fa-clock";
+    if (text.includes("reject")) return "fa-circle-xmark";
+    if (text.includes("approved")) return "fa-circle-check";
+    if (text.includes("clarif")) return "fa-circle-question";
+    if (text.includes("reassign") || text.includes("delegat")) return "fa-user-gear";
+    return "fa-bell";
+  };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden m-6 p-6">
-      {/* Header & Controls */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-bold text-gray-900">Notifications</h2>
-          <span className="bg-slate-100 text-slate-700 text-xs px-2.5 py-0.5 rounded-full font-medium">
-            {totalRecords} Total
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <TableSearch
-            value={search}
-            onChange={setSearch}
-            placeholder="Search notification message..."
-            className="w-full sm:w-72"
-            inputClassName="py-1.5"
-          />
-          {/* Standardized Toolbar Actions (Filter / Export / Print) */}
-          <TableToolbarActions
-            onOpenFilter={openFilter}
-            hasActiveFilters={hasActiveFilters}
-            onClearFilters={resetFilters}
-            onExport={() => exportToCsv(paginatedData as unknown as Record<string, unknown>[], "notifications.csv")}
-            exportTitle="Export Notifications"
-          />
-        </div>
+    <div className="space-y-4">
+      {/* Filter Tabs matching HTML Prototype */}
+      <div className="tabs mb-4" role="tablist" aria-label="Notification filters">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={filter === "all"}
+          onClick={() => setFilter("all")}
+          className="tab"
+        >
+          All Notifications
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={filter === "unread"}
+          onClick={() => setFilter("unread")}
+          className="tab"
+        >
+          Unread Alerts <span className="n">{unreadCount}</span>
+        </button>
       </div>
 
-      {/* Active Filter Chips */}
-      {hasActiveFilters && (
-        <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          <span className="text-xs text-gray-500 font-medium">Filters:</span>
-          {Object.entries(appliedFilters).map(([key, val]) => {
-            if (!val) return null;
-            return (
-              <span
-                key={key}
-                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-800 border border-blue-200"
-              >
-                <span className="capitalize">{key}:</span>
-                <span className="font-semibold">{val}</span>
-                <button
-                  type="button"
-                  onClick={() => clearSingleFilter(key)}
-                  className="hover:text-red-500 ml-0.5 cursor-pointer"
+      {/* Notifications List Card matching HTML Prototype */}
+      <section className="card bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+        {displayedList.length > 0 ? (
+          <div className="divide-y divide-slate-100">
+            {displayedList.map((n, idx) => {
+              const iconClass = getNotifIcon(n);
+              const isUnread = !n.read;
+              return (
+                <article
+                  key={n.id || `notif_${idx}`}
+                  className={`p-4 sm:p-5 flex gap-4 transition-colors ${
+                    isUnread ? "bg-blue-50/40" : "bg-white hover:bg-slate-50/50"
+                  }`}
                 >
-                  <X size={12} />
-                </button>
-              </span>
-            );
-          })}
-        </div>
-      )}
+                  {/* Status / Category Icon Avatar */}
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${
+                      isUnread
+                        ? "bg-blue-100 text-blue-600 font-bold"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    <i className={`fa-solid ${iconClass}`}></i>
+                  </div>
 
-      {/* Table */}
-      <DataTable
-        columns={columns}
-        data={paginatedData}
-        headerClassName="bg-gray-50"
-        headCellClassName="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider"
-        cellClassName="px-6 py-4"
-        rowClassName="hover:bg-gray-50 transition-colors"
-      />
+                  {/* Notification Content */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                      <span className="font-bold text-sm text-slate-900">
+                        {n.title || n.type || "Notification"}
+                      </span>
+                      <span className="text-xs text-slate-400 font-mono">
+                        {n.time || "Just now"}
+                      </span>
+                    </div>
 
-      {/* Pagination */}
-      <div className="mt-4">
-        <Pagination
-          currentPage={currentPage}
-          pageSize={pageSize}
-          totalRecords={totalRecords}
-          onPageChange={handlePageChange}
-          onPageSizeChange={handlePageSizeChange}
-          pageSizeOptions={[5, 10, 20]}
-        />
-      </div>
+                    <p className="text-xs sm:text-sm text-slate-700 break-words leading-relaxed">
+                      {n.message}
+                    </p>
 
-      {/* Shared CustomPanel for Filters */}
-      <CustomPanel
-        isOpen={isFilterOpen}
-        onClose={closeFilter}
-        title="Filter Notifications"
-        width="400px"
-        footer={
-          <div className="flex items-center justify-between w-full">
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="px-3.5 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer"
-            >
-              Reset
-            </button>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={closeFilter}
-                className="px-3.5 py-2 text-xs font-medium text-gray-700 border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={applyFilters}
-                className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-colors cursor-pointer"
-              >
-                Apply Filters
-              </button>
-            </div>
+                    {/* Action Buttons */}
+                    <div className="mt-3 flex items-center gap-2 flex-wrap">
+                      {n.requestId && (
+                        <button
+                          type="button"
+                          onClick={() => handleViewDetails(n)}
+                          className="btn btn-sm btn-outline !text-xs !py-1 px-3 inline-flex items-center gap-1.5"
+                        >
+                          <i className="fa-solid fa-eye text-blue-600"></i> View Details
+                        </button>
+                      )}
+                      {isUnread && n.id && (
+                        <button
+                          type="button"
+                          onClick={() => handleMarkAsRead(n.id)}
+                          className="btn btn-sm btn-outline !text-xs !py-1 px-3 text-slate-600 hover:text-slate-900"
+                        >
+                          Mark as Read
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
-        }
-      >
-        <div className="space-y-4">
-          <Field label="Notification Type">
-            <SelectField
-              placeholder="All Types"
-              value={tempFilters.type ?? ""}
-              onChange={(val) => setFilterField("type", val)}
-              options={typeOptions}
-            />
-          </Field>
-        </div>
-      </CustomPanel>
+        ) : (
+          <div className="p-12 text-center text-slate-400 text-sm">
+            <i className="fa-regular fa-bell-slash text-2xl text-slate-300 block mb-2"></i>
+            No notifications found in this view.
+          </div>
+        )}
+      </section>
     </div>
   );
 };

@@ -9,18 +9,55 @@ export const USER_ROLES = {
 
 export type UserRole = typeof USER_ROLES[keyof typeof USER_ROLES];
 
-
 export const ROLE_PAGES: Record<UserRole, string[]> = {
-  user: ['Home', 'Notifications', 'Self Nominations', 'My Nominations','Add Nomination'],
-  manager: ['Home', 'Notifications', 'Self Nominations', 'My Nominations', 'Approvals','Add Nomination'],
-  jury: ['Home', 'Notifications', 'Self Nominations', 'My Nominations','Add Nomination', 'Approvals', 'Business Jury'],
-  presidentUnit: ['Home', 'Notifications', 'Self Nominations', 'My Nominations','Add Nomination', 'Approvals', 'President Unit'],
-  presidentLevel: ['President Level'],
-  admin: 
-  ['Home', 'Notifications',
-     'Self Nominations','Add Nomination', 
-     'My Nominations', 'Approvals', 
-     'Business Jury', 'President Unit', 
-     'President Level','Award Management',
-     'Admin Setting'],
+  user: [
+    'Dashboard', 'Home', 
+    'Notifications', 
+    'Create Request', 'Self Nominations', 'Add Nomination', 
+    'My Requests', 'My Nominations', 
+    'Profile Card'
+  ],
+  manager: [
+    'Dashboard', 'Home', 
+    'Notifications', 
+    'Create Request', 'Self Nominations', 'Add Nomination', 
+    'My Requests', 'My Nominations', 
+    'Approval List', 'Approvals', 
+    'Profile Card'
+  ],
+  jury: [
+    'Dashboard', 'Home', 
+    'Notifications', 
+    'Create Request', 'Self Nominations', 'Add Nomination', 
+    'My Requests', 'My Nominations', 
+    'Approval List', 'Approvals', 
+    'Business Jury', 
+    'Profile Card'
+  ],
+  presidentUnit: [
+    'Dashboard', 'Home', 
+    'Notifications', 
+    'Create Request', 'Self Nominations', 'Add Nomination', 
+    'My Requests', 'My Nominations', 
+    'Approval List', 'Approvals', 
+    'President Unit', 
+    'Profile Card'
+  ],
+  presidentLevel: [
+    'Dashboard', 'Home', 
+    'Notifications', 
+    'Approval List', 'Approvals', 
+    'President Level', 
+    'Profile Card'
+  ],
+  admin: [
+    'Dashboard', 'Home', 
+    'Notifications', 
+    'Create Request', 'Self Nominations', 'Add Nomination', 
+    'My Requests', 'My Nominations', 
+    'Approval List', 'Approvals', 
+    'Business Jury', 'President Unit', 'President Level', 
+    'Award Management', 'Admin Setting', 'Settings', 
+    'Group & Users', 'Profile Card'
+  ],
 };

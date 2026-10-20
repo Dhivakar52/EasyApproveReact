@@ -1,268 +1,422 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import type { ColumnDef } from "@tanstack/react-table";
-import {
-  X,
-  Eye,
-  UserCheck,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Plane,
-  FolderGit2,
-  Calendar,
-  Building,
-  User,
-  History,
-} from "lucide-react";
+import { UserCheck, Filter, X } from "lucide-react";
 import type Nomination from "@/dataTypes/nomination";
-import type { NominationStatus } from "@/dataTypes/nomination";
+import { nominationService } from "@/services/nominationService";
 import { DataTable } from "@/common/Datatable";
-import { TableSearch } from "@/common/TableSearch";
 import { Pagination } from "@/common/Pagination";
+import { TableSearch } from "@/common/TableSearch";
 import { ActionMenu } from "@/common/ActionMenu";
-import CustomPanel from "@/common/CustomPanel";
-import TableToolbarActions from "@/common/TableToolbarActions";
+import { DateRangeFilter } from "@/common/DateRangeFilter";
+import { TableToolbarActions } from "@/common/TableToolbarActions";
+import { toast } from "@/components/ui/sonner";
 import { exportToCsv } from "@/lib/utils";
-import { Field, SelectField } from "@/components/FormPrimitives";
-import { useTable } from "@/hooks/useTable";
-import NominationDetailsModal from "./NominationDetailsModal ";
-import ProjectReassignModal from "./ProjectReassignModal";
-import { nominationService, DEPARTMENTS } from "@/services/nominationService";
-import type { UserRole } from "@/dataTypes/roles";
 
-interface TableProps {
+interface NominationTableProps {
   nominations: Nomination[];
-  onAdd?: () => void;
+  activeTab?: string;
+  totalCountInTab?: number;
 }
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "Pending":
-      return "text-orange-700 bg-orange-100/90 border border-orange-200";
-    case "In Review":
-    case "Under Review":
-      return "text-blue-700 bg-blue-100/90 border border-blue-200";
-    case "Approved":
-      return "text-emerald-700 bg-emerald-100/90 border border-emerald-200";
-    case "Rejected":
-      return "text-red-700 bg-red-100/90 border border-red-200";
-    default:
-      return "text-gray-700 bg-gray-100 border border-gray-200";
+const formatINR = (n?: number | string) => {
+  const num = Number(n) || 0;
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(num);
+};
+
+const formatDate = (s?: string | number) => {
+  if (!s) return "";
+  try {
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return String(s);
+    return d.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return String(s);
   }
 };
 
-const statusOptions = ["Pending", "In Review", "Approved", "Rejected"];
-const nominationTypeOptions = ["Travel Expenses", "Project"];
+const getDaysLeft = (deadlineStr?: string) => {
+  if (!deadlineStr) return 5;
+  try {
+    const target = new Date(deadlineStr).getTime();
+    const now = new Date().getTime();
+    return Math.round((target - now) / 864e5);
+  } catch {
+    return 5;
+  }
+};
 
-const NominationTable = ({ nominations, onAdd }: TableProps) => {
-  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
-  const [selectedNomination, setSelectedNomination] = useState<Nomination | null>(null);
+export const renderStatusBadge = (r: Nomination) => {
+  const status = r.status;
+  switch (status) {
+    case "Pending":
+    case "In Review":
+    case "Under Review":
+      return (
+        <span className="badge badge-pending">
+          <i className="fa-regular fa-clock text-[10px]"></i>
+          Pending Approval
+        </span>
+      );
+    case "Approved":
+      return (
+        <span className="badge badge-approved">
+          <i className="fa-solid fa-circle-check text-[10px]"></i>
+          Approved
+        </span>
+      );
+    case "Rejected":
+      return (
+        <span className="badge badge-rejected">
+          <i className="fa-solid fa-circle-xmark text-[10px]"></i>
+          Rejected
+        </span>
+      );
+    case "Clarification Required" as any:
+      return (
+        <span className="badge badge-clarify">
+          <i className="fa-solid fa-circle-question text-[10px]"></i>
+          Clarification Required
+        </span>
+      );
+    case "Under Modification" as any:
+      return (
+        <span className="badge badge-modify">
+          <i className="fa-solid fa-pen-to-square text-[10px]"></i>
+          Modification Required
+        </span>
+      );
+    case "Re-assigned" as any:
+      return (
+        <span className="badge badge-reassigned">
+          <i className="fa-solid fa-user-gear text-[10px]"></i>
+          Pending (Delegated)
+        </span>
+      );
+    case "Withdrawn" as any:
+      return (
+        <span className="badge badge-withdrawn">
+          <i className="fa-solid fa-ban text-[10px]"></i>
+          Withdrawn
+        </span>
+      );
+    default:
+      return (
+        <span className="badge badge-withdrawn">
+          <i className="fa-solid fa-circle text-[10px]"></i>
+          {status}
+        </span>
+      );
+  }
+};
 
-  const [reassignModalOpen, setReassignModalOpen] = useState(false);
-  const [reassignNomination, setReassignNomination] = useState<Nomination | null>(null);
+const NominationTable: React.FC<NominationTableProps> = ({
+  nominations,
+}) => {
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [showFilterDropdowns, setShowFilterDropdowns] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const navigate = useNavigate();
+  const [pageSize, setPageSize] = useState(6);
 
-  const currentRole = (localStorage.getItem("userRole") as UserRole) || "user";
-  const isAuthorizedApprover =
-    currentRole === "manager" ||
-    currentRole === "admin" ||
-    currentRole === "jury" ||
-    currentRole === "presidentUnit";
+  const [withdrawTarget, setWithdrawTarget] = useState<Nomination | null>(null);
+  const [withdrawReason, setWithdrawReason] = useState("");
+  const [withdrawError, setWithdrawError] = useState("");
 
-  const {
-    search,
-    setSearch,
-    isFilterOpen,
-    openFilter,
-    closeFilter,
-    tempFilters,
-    appliedFilters,
-    setFilterField,
-    applyFilters,
-    resetFilters,
-    clearSingleFilter,
-    hasActiveFilters,
-    paginatedData,
-    totalRecords,
-    currentPage,
-    pageSize,
-    handlePageChange,
-    handlePageSizeChange,
-  } = useTable<Nomination>({
-    data: nominations,
-    searchFields: [
-      "id",
-      "title",
-      "department",
-      "entity",
-      "nominee",
-      "assignedEmployee",
-      "nominationType",
-      "status",
-    ],
-    initialPageSize: 10,
-    filterPredicate: (item, filters) => {
-      if (
-        filters.department &&
-        item.department?.toLowerCase() !== filters.department.toLowerCase() &&
-        item.entity?.toLowerCase() !== filters.department.toLowerCase()
-      ) {
-        return false;
-      }
-      if (
-        filters.nominationType &&
-        item.nominationType?.toLowerCase() !== filters.nominationType.toLowerCase()
-      ) {
-        return false;
-      }
-      if (
-        filters.status &&
-        item.status?.toLowerCase() !== filters.status.toLowerCase()
-      ) {
-        return false;
-      }
-      return true;
-    },
-  });
-
-  const handleOpenDetails = (nomination: Nomination) => {
-    setSelectedNomination(nomination);
-    setDetailsModalOpen(true);
+  const matchStatus = (r: Nomination, filterKey: string) => {
+    if (filterKey === "all") return true;
+    if (filterKey === "pending") {
+      return (
+        r.status === "Pending" ||
+        r.status === "In Review" ||
+        r.status === "Under Review"
+      );
+    }
+    if (filterKey === "clarification") {
+      return (
+        r.status === ("Clarification Required" as any) ||
+        r.status === ("CLARIFICATION REQUIRED" as any)
+      );
+    }
+    if (filterKey === "modify") {
+      return (
+        r.status === ("Under Modification" as any) ||
+        r.status === ("MODIFICATION REQUIRED" as any)
+      );
+    }
+    if (filterKey === "approved") {
+      return r.status === "Approved";
+    }
+    if (filterKey === "rejected") {
+      return r.status === "Rejected" || (r.status as string) === "Withdrawn";
+    }
+    if (filterKey === "reassigned") {
+      return (
+        (r.status as string) === "Re-assigned" ||
+        Boolean(r.reassignmentHistory && r.reassignmentHistory.length > 0) ||
+        Boolean(r.reassignCount && r.reassignCount > 0)
+      );
+    }
+    return true;
   };
 
-  const handleOpenReassign = (nomination: Nomination) => {
-    setReassignNomination(nomination);
-    setReassignModalOpen(true);
-  };
-
-  const handleQuickStatusChange = (
-    nomination: Nomination,
-    newStatus: NominationStatus
-  ) => {
-    const reviewer =
-      currentRole === "admin"
-        ? "Administrator"
-        : currentRole === "manager"
-        ? "Manager Approver"
-        : `${currentRole.toUpperCase()}`;
-    nominationService.updateNominationStatus(
-      nomination.id,
-      newStatus,
-      "Quick status update from table action",
-      reviewer
+  const matchCategory = (r: Nomination, cat: string) => {
+    if (!cat) return true;
+    return (
+      r.category === cat ||
+      r.type === cat ||
+      (cat === "Expense Request" && r.nominationType === "Project") ||
+      (cat === "Travel Request" && r.nominationType === "Travel Expenses")
     );
   };
 
-  // Define Columns matching Requirement 8:
-  // Nomination ID, title, department, nomination type, submitted date, assigned employee, and status
+  // Filter based on search query, statusFilter, categoryFilter, and date range
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const fromTime = fromDate ? new Date(fromDate).getTime() : 0;
+    const toTime = toDate ? new Date(toDate).getTime() + 864e5 : 0;
+
+    return nominations.filter((r) => {
+      if (!matchStatus(r, statusFilter)) return false;
+      if (!matchCategory(r, categoryFilter)) return false;
+
+      // Date range filtering
+      if (fromTime || toTime) {
+        const itemDateStr = r.createdAt || r.submittedDate || r.deadline || "";
+        const itemTime = itemDateStr ? new Date(itemDateStr).getTime() : NaN;
+        if (!isNaN(itemTime)) {
+          if (fromTime && itemTime < fromTime) return false;
+          if (toTime && itemTime > toTime) return false;
+        }
+      }
+
+      if (!q) return true;
+      const num = (r.number || r.id || "").toLowerCase();
+      const title = (r.title || "").toLowerCase();
+      const approver = (r.approverName || r.assignedEmployee || "").toLowerCase();
+      const approverEmail = (r.approverEmail || r.managerEmail || "").toLowerCase();
+      return (
+        num.includes(q) ||
+        title.includes(q) ||
+        approver.includes(q) ||
+        approverEmail.includes(q)
+      );
+    });
+  }, [nominations, search, statusFilter, categoryFilter, fromDate, toDate]);
+
+  // Reset to page 1 on filter or search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter, categoryFilter, fromDate, toDate]);
+
+  const hasActiveFilters =
+    search !== "" ||
+    statusFilter !== "all" ||
+    categoryFilter !== "" ||
+    Boolean(fromDate) ||
+    Boolean(toDate);
+
+  const handleResetFilters = () => {
+    setSearch("");
+    setStatusFilter("all");
+    setCategoryFilter("");
+    setFromDate("");
+    setToDate("");
+    setCurrentPage(1);
+  };
+
+  const handleExport = () => {
+    const exportData = filteredRows.map((r) => ({
+      "Request Number": r.number || r.id,
+      "Request Title": r.title,
+      "Type":
+        r.type ||
+        r.category ||
+        (r.nominationType === "Project" ? "Expense Request" : "Travel Request"),
+      "Approver": r.approverName || r.assignedEmployee || "",
+      "Approver Email": r.approverEmail || r.managerEmail || "",
+      "Amount": r.amount || "",
+      "Deadline": r.deadline || "",
+      "Status": r.status,
+    }));
+    exportToCsv(exportData, "my-requests.csv");
+    toast.success("Requests exported to CSV successfully.");
+  };
+
+  const handleOpenDetails = (r: Nomination) => {
+    try {
+      sessionStorage.setItem(
+        "ea_nav_source",
+        JSON.stringify({ page: "my-requests", label: "My Requests", url: "/my-nominations" })
+      );
+    } catch {}
+    navigate(`/my-nominations/${r.number || r.id}`);
+  };
+
+  const handleRemindApprover = (r: Nomination) => {
+    nominationService.wfRemind(r.id);
+    toast.success(
+      `Reminder sent to ${
+        r.approverName || r.assignedEmployee || "Approver"
+      } for request ${r.number || r.id}.`
+    );
+  };
+
+  const handleModifyRequest = (r: Nomination) => {
+    try {
+      sessionStorage.setItem(
+        "ea_nav_source",
+        JSON.stringify({ page: "my-requests", label: "My Requests", url: "/my-nominations" })
+      );
+    } catch {}
+    navigate(`/modify/${r.number || r.id}`);
+  };
+
+  const handleWithdrawRequest = (r: Nomination) => {
+    setWithdrawTarget(r);
+    setWithdrawReason("");
+    setWithdrawError("");
+  };
+
+  const handleConfirmWithdraw = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!withdrawTarget) return;
+    if (!withdrawReason.trim()) {
+      setWithdrawError("Please enter a mandatory withdrawal reason.");
+      return;
+    }
+    const res = nominationService.wfWithdraw(
+      withdrawTarget.id,
+      withdrawReason.trim(),
+      withdrawTarget.nominee || "Requester"
+    );
+    if (res.success) {
+      toast.warning(`Request ${withdrawTarget.number || withdrawTarget.id} has been withdrawn.`);
+      setWithdrawTarget(null);
+    } else {
+      setWithdrawError(res.error || "Withdrawal failed.");
+    }
+  };
+
+  // TanStack columns matching exact prototype columns and ordering
   const columns = useMemo<ColumnDef<Nomination>[]>(
     () => [
       {
-        accessorKey: "id",
-        header: "Nomination ID",
+        accessorKey: "number",
+        header: "Request No.",
         cell: ({ row }) => {
-          const item = row.original;
+          const r = row.original;
           return (
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-gray-900 font-mono">
-                {item.id}
-              </span>
-              <span className="text-[10px] text-gray-400">
-                {item.progress || "Stage 1"}
-              </span>
-            </div>
+            <button
+              type="button"
+              className="link mono font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
+              onClick={() => handleOpenDetails(r)}
+              title="View complete details"
+            >
+              {r.number || r.id}
+            </button>
           );
         },
       },
       {
         accessorKey: "title",
-        header: "Title",
-        cell: ({ row }) => {
-          const item = row.original;
-          return (
-            <div className="max-w-[220px]">
-              <p
-                className="text-xs font-semibold text-gray-900 truncate hover:text-emerald-700 cursor-pointer"
-                onClick={() => handleOpenDetails(item)}
-                title={item.title}
-              >
-                {item.title}
-              </p>
-              <p className="text-[11px] text-gray-500 truncate">
-                by {item.nominee}
-              </p>
-            </div>
-          );
-        },
+        header: "Request Title",
+        cell: ({ row }) => (
+          <div
+            className="font-semibold text-slate-800"
+            style={{ minWidth: "11rem" }}
+          >
+            {row.original.title}
+          </div>
+        ),
       },
       {
-        accessorKey: "department",
-        header: "Department",
+        accessorKey: "type",
+        header: "Type",
         cell: ({ row }) => {
-          const dept = row.original.department || row.original.entity;
+          const r = row.original;
           return (
-            <div className="flex items-center gap-1.5 text-xs text-gray-800">
-              <Building size={13} className="text-gray-400 shrink-0" />
-              <span className="truncate max-w-[140px]">{dept}</span>
-            </div>
-          );
-        },
-      },
-      {
-        accessorKey: "nominationType",
-        header: "Nomination Type",
-        cell: ({ row }) => {
-          const type = row.original.nominationType;
-          const isProject = type === "Project";
-          return (
-            <span
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold rounded-md border ${
-                isProject
-                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                  : "bg-blue-50 text-blue-800 border-blue-200"
-              }`}
-            >
-              {isProject ? (
-                <FolderGit2 size={12} className="text-emerald-600" />
-              ) : (
-                <Plane size={12} className="text-blue-600" />
-              )}
-              {type || "Project"}
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
+              {r.type ||
+                r.category ||
+                (r.nominationType === "Project"
+                  ? "Expense Request"
+                  : "Travel Request")}
             </span>
           );
         },
       },
       {
-        accessorKey: "submittedDate",
-        header: "Submitted Date",
+        accessorKey: "approverName",
+        header: "Approver",
         cell: ({ row }) => {
-          const date = row.original.submittedDate;
+          const r = row.original;
           return (
-            <div className="flex items-center gap-1.5 text-xs text-gray-600">
-              <Calendar size={13} className="text-gray-400" />
-              <span>{date || "07/20/2025"}</span>
+            <div>
+              <div className="font-medium text-slate-800">
+                {r.approverName || r.assignedEmployee}
+              </div>
+              <div className="sub text-xs text-slate-500 font-mono">
+                {r.approverEmail || r.managerEmail}
+              </div>
             </div>
           );
         },
       },
       {
-        accessorKey: "assignedEmployee",
-        header: "Assigned Employee",
+        accessorKey: "amount",
+        header: "Expected Amount",
+        cell: ({ row }) => (
+          <span className="mono whitespace-nowrap font-bold text-slate-900">
+            {formatINR(row.original.amount)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "deadline",
+        header: "Deadline",
         cell: ({ row }) => {
-          const item = row.original;
-          const isReassigned =
-            item.reassignmentHistory && item.reassignmentHistory.length > 0;
+          const r = row.original;
+          const days = getDaysLeft(r.deadline);
+          const isOverdue = days < 0;
+          const isDueSoon = days >= 0 && days <= 2;
           return (
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1 text-xs font-medium text-gray-900">
-                <User size={13} className="text-gray-400" />
-                <span className="font-semibold text-emerald-800 truncate max-w-[150px]">
-                  {item.assignedEmployee || item.nominee}
-                </span>
+            <div className="whitespace-nowrap">
+              <div className="font-medium text-slate-700">
+                {formatDate(r.deadline)}
               </div>
-              {isReassigned && (
-                <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-600 font-medium">
-                  <History size={10} /> Reassigned ({item.reassignmentHistory?.length})
-                </span>
+              {isOverdue && (
+                <div className="mt-1">
+                  <span className="chip chip-danger !text-[11px]">
+                    <i className="fa-solid fa-triangle-exclamation text-[10px]"></i>{" "}
+                    Overdue by {Math.abs(days)} d
+                  </span>
+                </div>
+              )}
+              {!isOverdue && isDueSoon && (
+                <div className="mt-1">
+                  <span className="chip chip-warn !text-[11px]">
+                    <i className="fa-solid fa-clock text-[10px]"></i>{" "}
+                    {days === 0
+                      ? "Due today"
+                      : days === 1
+                      ? "Due tomorrow"
+                      : `Due in ${days} d`}
+                  </span>
+                </div>
               )}
             </div>
           );
@@ -271,261 +425,268 @@ const NominationTable = ({ nominations, onAdd }: TableProps) => {
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => {
-          const status = row.original.status;
-          return (
-            <span
-              className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full ${getStatusColor(
-                status
-              )}`}
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
-                  status === "Approved"
-                    ? "bg-emerald-600"
-                    : status === "Rejected"
-                    ? "bg-red-600"
-                    : status === "In Review" || status === "Under Review"
-                    ? "bg-blue-600"
-                    : "bg-orange-500"
-                }`}
-              />
-              {status}
-            </span>
-          );
-        },
+        cell: ({ row }) => renderStatusBadge(row.original),
       },
       {
         id: "actions",
         header: "Actions",
         cell: ({ row }) => {
-          const item = row.original;
-          const isProject = item.nominationType === "Project";
+          const r = row.original;
+          const isPending =
+            r.status === "Pending" ||
+            r.status === "In Review" ||
+            r.status === "Under Review";
+          const canWithdraw =
+            r.status !== "Approved" &&
+            r.status !== "Rejected" &&
+            (r.status as string) !== "Withdrawn";
 
-          const actionList = [
-            {
-              label: "View Details",
-              icon: <Eye className="w-4 h-4 mr-2 text-blue-600" />,
-              onClick: () => handleOpenDetails(item),
-            },
-          ];
-
-          // Project Reassignment action if nomination is project-related
-          if (isProject) {
-            actionList.push({
-              label: "Reassign Employee",
-              icon: <UserCheck className="w-4 h-4 mr-2 text-purple-600" />,
-              onClick: () => handleOpenReassign(item),
-            });
-          }
-
-          // Approval workflow quick actions for authorized roles
-          if (isAuthorizedApprover) {
-            if (item.status !== "Approved") {
-              actionList.push({
-                label: "Approve",
-                icon: <CheckCircle className="w-4 h-4 mr-2 text-emerald-600" />,
-                onClick: () => handleQuickStatusChange(item, "Approved"),
-              });
-            }
-            if (item.status !== "In Review") {
-              actionList.push({
-                label: "Mark In Review",
-                icon: <Clock className="w-4 h-4 mr-2 text-blue-600" />,
-                onClick: () => handleQuickStatusChange(item, "In Review"),
-              });
-            }
-            if (item.status !== "Rejected") {
-              actionList.push({
-                label: "Reject",
-                icon: <XCircle className="w-4 h-4 mr-2 text-red-600" />,
-                onClick: () => handleQuickStatusChange(item, "Rejected"),
-              });
-            }
-          }
-
-          return <ActionMenu item={item} actions={actionList} />;
+          return (
+            <div className="flex justify-end">
+              <ActionMenu
+                item={r}
+                actions={[
+                  {
+                    label: "View Details",
+                    icon: <i className="fa-solid fa-eye text-blue-600 mr-2"></i>,
+                    onClick: () => handleOpenDetails(r),
+                  },
+                  ...(isPending
+                    ? [
+                        {
+                          label: "Remind Approver",
+                          icon: (
+                            <i className="fa-regular fa-bell text-slate-500 mr-2"></i>
+                          ),
+                          onClick: () => handleRemindApprover(r),
+                        },
+                      ]
+                    : []),
+                  {
+                    label: "Modify Request",
+                    icon: (
+                      <i className="fa-solid fa-pen-to-square text-blue-500 mr-2"></i>
+                    ),
+                    onClick: () => handleModifyRequest(r),
+                  },
+                  ...(canWithdraw
+                    ? [
+                        {
+                          label: "Withdraw Request",
+                          icon: (
+                            <i className="fa-solid fa-ban text-rose-500 mr-2"></i>
+                          ),
+                          variant: "danger" as const,
+                          onClick: () => handleWithdrawRequest(r),
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            </div>
+          );
         },
       },
     ],
-    [isAuthorizedApprover]
+    []
   );
+
+  // Paginated slice for the table
+  const startIdx = (currentPage - 1) * pageSize;
+  const endIdx = startIdx + pageSize;
+  const currentRows = filteredRows.slice(startIdx, endIdx);
 
   return (
     <>
-      <div className="bg-white rounded-xl shadow-xs overflow-hidden">
-        {/* Search & Filter Toolbar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-gray-500">
-              Showing {paginatedData.length} of {totalRecords} records
-            </span>
+      <section className="card bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+        {/* Top Header matching reference screenshot */}
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+          {/* Left: Icon Badge + Title + Subtitle */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100/60 shadow-xs">
+              <UserCheck className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
+                My Requests
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                View and manage registered request records
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <TableSearch
-              value={search}
-              onChange={setSearch}
-              placeholder="Search ID, Title, Dept, Employee..."
-              className="w-full sm:w-80"
-              inputClassName="py-1.5 text-xs"
+          {/* Right: Search, Date Range, Filter/Actions Sliders, Add Button */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <div className="w-full sm:w-64 md:w-72">
+              <TableSearch
+                value={search}
+                onChange={setSearch}
+                placeholder="Search Request / ID / Approver"
+                allowClear
+              />
+            </div>
+
+            <DateRangeFilter
+              fromDate={fromDate}
+              toDate={toDate}
+              onFromDateChange={setFromDate}
+              onToDateChange={setToDate}
             />
-            {/* Standardized Toolbar Actions */}
+
             <TableToolbarActions
-              onOpenFilter={openFilter}
+              onOpenFilter={() => setShowFilterDropdowns((v) => !v)}
               hasActiveFilters={hasActiveFilters}
-              onClearFilters={resetFilters}
-              onExport={() =>
-                exportToCsv(
-                  paginatedData as unknown as Record<string, unknown>[],
-                  "my-nominations.csv"
-                )
-              }
-              exportTitle="Export Nominations"
-              onAdd={onAdd}
-              addTitle="Self Nominate"
+              onClearFilters={handleResetFilters}
+              onExport={handleExport}
+              exportTitle="Export Requests CSV"
+              onPrint={() => window.print()}
+              onAdd={() => navigate("/self-nominations")}
+              addTitle="Create Request"
+              showFilterAction={true}
             />
           </div>
         </div>
 
-        {/* Active Filter Chips */}
-        {hasActiveFilters && (
-          <div className="flex flex-wrap items-center gap-1.5 mb-3">
-            <span className="text-xs text-gray-500 font-medium">Active Filters:</span>
-            {Object.entries(appliedFilters).map(([key, val]) => {
-              if (!val) return null;
-              return (
-                <span
-                  key={key}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200"
-                >
-                  <span className="capitalize">{key}:</span>
-                  <span className="font-semibold">{val}</span>
-                  <button
-                    type="button"
-                    onClick={() => clearSingleFilter(key)}
-                    className="hover:text-red-500 ml-0.5 cursor-pointer"
-                  >
-                    <X size={12} />
-                  </button>
-                </span>
-              );
-            })}
+        {/* Secondary Filter Row (toggleable via Filter icon or if filters active) */}
+        {(showFilterDropdowns || statusFilter !== "all" || categoryFilter !== "") && (
+          <div className="px-4 py-2.5 bg-slate-50/70 border-b border-slate-100 flex items-center gap-3 flex-wrap animate-in fade-in duration-100">
+            <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
+              <span>Filters:</span>
+            </div>
+            <select
+              className="text-xs py-1.5 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label="Filter by status"
+            >
+              <option value="all">All Statuses</option>
+              <option value="pending">Pending Approvals</option>
+              <option value="clarification">Clarifications</option>
+              <option value="modify">Under Modification</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected / Withdrawn</option>
+              <option value="reassigned">Delegated</option>
+            </select>
+            <select
+              className="text-xs py-1.5 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              aria-label="Filter by category"
+            >
+              <option value="">All Categories</option>
+              <option value="Expense Request">Expense Request</option>
+              <option value="Travel Request">Travel Request</option>
+              <option value="Process Change">Process Change</option>
+              <option value="Creative Approval">Creative Approval</option>
+              <option value="Other">Other</option>
+            </select>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="text-xs text-rose-600 hover:text-rose-700 font-medium flex items-center gap-1 ml-auto cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" /> Clear Filters
+              </button>
+            )}
           </div>
         )}
 
-        {/* DataTable */}
+        {/* Existing React DataTable Component matching dark navy header */}
         <DataTable
           columns={columns}
-          data={paginatedData}
-          headerClassName="bg-gray-50/80 border-b border-gray-200"
-          headCellClassName="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider"
-          cellClassName="px-4 py-3 border-b border-gray-100"
-          rowClassName="hover:bg-slate-50/60 transition-colors"
+          data={currentRows}
+          emptyMessage={
+            search
+              ? "No requests match your search criteria."
+              : "No requests in this category."
+          }
+          tableClassName="tbl"
+          headerClassName="bg-[#0B132B]"
+          headCellClassName="text-xs font-semibold text-white tracking-normal py-3.5 px-4"
+          cellClassName="py-3.5 px-4 text-xs border-b border-slate-100"
+          rowClassName="hover:bg-slate-50/80 transition"
         />
 
-        {/* Pagination Toolbar */}
-        <div className="mt-4">
-          <Pagination
-            currentPage={currentPage}
-            pageSize={pageSize}
-            totalRecords={totalRecords}
-            onPageChange={handlePageChange}
-            onPageSizeChange={handlePageSizeChange}
-            pageSizeOptions={[5, 10, 20]}
-          />
-        </div>
-      </div>
+        {/* Existing React Pagination Component */}
+        {filteredRows.length > 0 && (
+          <div className="p-4 border-t border-slate-100">
+            <Pagination
+              currentPage={currentPage}
+              pageSize={pageSize}
+              totalRecords={filteredRows.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              pageSizeOptions={[6, 10, 20, 50]}
+            />
+          </div>
+        )}
+      </section>
 
-      {/* Slide-out details modal */}
-      <NominationDetailsModal
-        isOpen={detailsModalOpen}
-        onClose={() => setDetailsModalOpen(false)}
-        nomination={selectedNomination}
-        onOpenReassign={(nom) => {
-          setDetailsModalOpen(false);
-          handleOpenReassign(nom);
-        }}
-        onStatusUpdated={() => {
-          // Re-sync selected nomination
-          if (selectedNomination) {
-            const updated = nominationService.getNominationById(selectedNomination.id);
-            if (updated) setSelectedNomination(updated);
-          }
-        }}
-      />
-
-      {/* Project Reassignment Modal */}
-      <ProjectReassignModal
-        isOpen={reassignModalOpen}
-        onClose={() => setReassignModalOpen(false)}
-        nomination={reassignNomination}
-        onSuccess={() => {
-          setReassignModalOpen(false);
-        }}
-      />
-
-      {/* Shared CustomPanel for Filters */}
-      <CustomPanel
-        isOpen={isFilterOpen}
-        onClose={closeFilter}
-        title="Filter Nominations"
-        width="400px"
-        footer={
-          <div className="flex items-center justify-between w-full">
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="px-3.5 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer"
-            >
-              Reset
-            </button>
-            <div className="flex items-center gap-2">
+      {/* Withdraw Modal if triggered from row action */}
+      {withdrawTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <i className="fa-solid fa-ban text-rose-600"></i> Withdraw Approval Request?
+              </h3>
               <button
-                type="button"
-                onClick={closeFilter}
-                className="px-3.5 py-2 text-xs font-medium text-gray-700 border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
+                onClick={() => setWithdrawTarget(null)}
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={applyFilters}
-                className="px-4 py-2 text-xs font-semibold text-white btn-theme hover:opacity-90 rounded-lg shadow-xs transition-colors cursor-pointer"
-              >
-                Apply Filters
+                &times;
               </button>
             </div>
+
+            <form onSubmit={handleConfirmWithdraw} className="p-5 space-y-4">
+              <p className="text-xs text-slate-500 leading-relaxed">
+                The request <b>{withdrawTarget.number || withdrawTarget.id}</b> will be withdrawn
+                and removed from active approval queues. All version records and attachments will be
+                preserved in audit archives.
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Reason for Withdrawal <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  value={withdrawReason}
+                  onChange={(e) => {
+                    setWithdrawReason(e.target.value);
+                    setWithdrawError("");
+                  }}
+                  rows={3}
+                  placeholder="State the operational reason for withdrawing this request..."
+                  className="w-full text-sm border border-slate-300 rounded-xl p-3 focus:border-rose-600 focus:ring-1 focus:ring-rose-600 outline-none"
+                  required
+                />
+                {withdrawError && (
+                  <p className="text-xs text-rose-600 mt-1 font-medium">{withdrawError}</p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setWithdrawTarget(null)}
+                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition"
+                >
+                  Confirm Withdrawal
+                </button>
+              </div>
+            </form>
           </div>
-        }
-      >
-        <div className="space-y-4">
-          <Field label="Department">
-            <SelectField
-              placeholder="All Departments"
-              value={tempFilters.department ?? ""}
-              onChange={(val) => setFilterField("department", val)}
-              options={DEPARTMENTS as unknown as string[]}
-            />
-          </Field>
-          <Field label="Nomination Type">
-            <SelectField
-              placeholder="All Types"
-              value={tempFilters.nominationType ?? ""}
-              onChange={(val) => setFilterField("nominationType", val)}
-              options={nominationTypeOptions}
-            />
-          </Field>
-          <Field label="Status">
-            <SelectField
-              placeholder="All Statuses"
-              value={tempFilters.status ?? ""}
-              onChange={(val) => setFilterField("status", val)}
-              options={statusOptions}
-            />
-          </Field>
         </div>
-      </CustomPanel>
+      )}
     </>
   );
 };

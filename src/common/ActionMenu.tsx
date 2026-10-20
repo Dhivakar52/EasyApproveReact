@@ -95,11 +95,11 @@ export function ActionMenu<T>({
     <DropdownMenu.Root open={open} onOpenChange={setOpen}>
       <DropdownMenu.Trigger
         className={cn(
-          "p-2 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none cursor-pointer",
+          "p-1.5 rounded-md hover:bg-slate-100 text-slate-700 transition-colors focus:outline-none cursor-pointer flex items-center justify-center",
           className
         )}
       >
-        {triggerIcon || <Menu className="w-5 h-5 text-blue-500" />}
+        {triggerIcon || <Menu className="w-4 h-4 text-slate-700" strokeWidth={2} />}
       </DropdownMenu.Trigger>
 
       <DropdownMenu.Portal>

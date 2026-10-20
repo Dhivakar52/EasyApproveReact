@@ -82,10 +82,10 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
         <button
           type="button"
           onClick={() => setShowActions((prev) => !prev)}
-          className={`h-9 w-9 p-0 flex items-center justify-center border rounded-md transition-all cursor-pointer shadow-xs ${
+          className={`h-9 w-9 p-0 flex items-center justify-center border rounded-lg transition-all cursor-pointer shadow-xs ${
             hasActiveFilters
               ? "border-blue-500 bg-blue-50/70 text-blue-600"
-              : "border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+              : "border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
           }`}
           title="Table Actions"
           aria-label="Table Actions"
@@ -112,21 +112,21 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
         {/* Actions Floating Popup Menu */}
         {showActions && (
           <div
-            className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-2 flex items-center gap-1 z-50 whitespace-nowrap animate-in fade-in zoom-in-95 duration-100"
+            className="absolute right-0 mt-2 bg-white border border-slate-200/90 rounded-2xl shadow-xl p-2 flex items-center gap-2 z-50 whitespace-nowrap animate-in fade-in zoom-in-95 duration-100"
             role="menu"
           >
-            {showFilterAction && onOpenFilter && (
+            {showFilterAction && (
               <button
                 type="button"
                 onClick={() => {
                   setShowActions(false);
-                  onOpenFilter();
+                  onOpenFilter?.();
                 }}
-                className="p-2 rounded-lg hover:bg-blue-50 text-gray-500 hover:text-blue-600 transition-colors cursor-pointer"
+                className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
                 title="Filter"
                 aria-label="Filter"
               >
-                <Filter className="w-[18px] h-[18px]" />
+                <Filter className="w-4 h-4" strokeWidth={1.75} />
               </button>
             )}
 
@@ -139,11 +139,11 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
                     onExport();
                   }
                 }}
-                className="p-2 rounded-lg hover:bg-green-50 text-gray-500 hover:text-green-600 transition-colors cursor-pointer"
+                className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
                 title={exportTitle}
                 aria-label={exportTitle}
               >
-                <FileSpreadsheet className="w-[18px] h-[18px]" />
+                <FileSpreadsheet className="w-4 h-4" strokeWidth={1.75} />
               </button>
             )}
 
@@ -158,11 +158,11 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
                     handleDefaultPrint();
                   }
                 }}
-                className="p-2 rounded-lg hover:bg-purple-50 text-gray-500 hover:text-purple-600 transition-colors cursor-pointer"
+                className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
                 title="Print"
                 aria-label="Print"
               >
-                <Printer className="w-[18px] h-[18px]" />
+                <Printer className="w-4 h-4" strokeWidth={1.75} />
               </button>
             )}
           </div>
@@ -174,11 +174,11 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
         <button
           type="button"
           onClick={onAdd}
-          className="h-9 w-9 p-0 shrink-0 text-white cursor-pointer bg-blue-600 hover:bg-blue-700 rounded-md flex items-center justify-center shadow-xs transition-colors"
+          className="h-9 w-9 p-0 shrink-0 text-white cursor-pointer bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center justify-center shadow-xs transition-colors"
           title={addTitle}
           aria-label={addTitle}
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-4 w-4" strokeWidth={2.2} />
         </button>
       )}
 

@@ -1,14 +1,12 @@
-import HomeComponent from "../components/Home/HomeComponent"
+import React from 'react';
+import DashboardComponent from '../components/Home/DashboardComponent';
 
-
-const HomePage = () => {
+const HomePage: React.FC = () => {
   return (
-          <div>
-            <HomeComponent/>
-          </div>
-
-  
-  )
-}
+    <div>
+      <DashboardComponent />
+    </div>
+  );
+};
 
 export default HomePage;

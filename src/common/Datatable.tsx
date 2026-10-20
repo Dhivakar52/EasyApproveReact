@@ -34,7 +34,7 @@ export function DataTable<TData, TValue>({
   onRowClick,
   containerClassName,
   tableClassName,
-  headerClassName = "bg-gray-100",
+  headerClassName = "bg-[#0B132B]",
   headCellClassName,
   rowClassName,
   cellClassName,
@@ -60,7 +60,7 @@ export function DataTable<TData, TValue>({
         {columns.map((_, colIndex) => (
           <td
             key={`skeleton-cell-${index}-${colIndex}`}
-            className="px-6 py-4"
+            className="px-4 py-3.5"
           >
             <div className="h-4 bg-gray-200 animate-pulse rounded w-full" />
           </td>
@@ -70,8 +70,8 @@ export function DataTable<TData, TValue>({
   };
 
   return (
-    <div className={cn("overflow-x-auto", containerClassName)}>
-      <table className={cn("w-full border-collapse table-auto", tableClassName)}>
+    <div className={cn("w-full overflow-x-auto rounded-lg border border-slate-200/90 shadow-xs bg-white", containerClassName)}>
+      <table className={cn("w-full border-collapse table-auto text-left", tableClassName)}>
         <thead className={headerClassName}>
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
@@ -83,7 +83,7 @@ export function DataTable<TData, TValue>({
                   <th
                     key={header.id}
                     className={cn(
-                      "px-6 py-3 text-left text-sm font-semibold text-gray-600",
+                      "px-4 py-3.5 text-left text-xs font-semibold text-white tracking-normal select-none whitespace-nowrap",
                       headCellClassName
                     )}
                   >
@@ -91,7 +91,7 @@ export function DataTable<TData, TValue>({
                       <div
                         className={cn(
                           "flex items-center gap-1.5",
-                          isSortable && "cursor-pointer select-none hover:text-gray-900"
+                          isSortable && "cursor-pointer select-none hover:text-white"
                         )}
                         onClick={
                           isSortable ? header.column.getToggleSortingHandler() : undefined
@@ -102,13 +102,13 @@ export function DataTable<TData, TValue>({
                           header.getContext()
                         )}
                         {isSortable && (
-                          <span className="shrink-0 text-gray-400">
+                          <span className="shrink-0 text-white/70 ml-0.5">
                             {sortDirection === "asc" ? (
-                              <ArrowUp className="h-3.5 w-3.5 text-gray-800" />
+                              <ArrowUp className="h-3 w-3 text-white" />
                             ) : sortDirection === "desc" ? (
-                              <ArrowDown className="h-3.5 w-3.5 text-gray-800" />
+                              <ArrowDown className="h-3 w-3 text-white" />
                             ) : (
-                              <ArrowUpDown className="h-3.5 w-3.5 opacity-50" />
+                              <ArrowUpDown className="h-3 w-3 text-white/60 hover:text-white" />
                             )}
                           </span>
                         )}
@@ -120,7 +120,7 @@ export function DataTable<TData, TValue>({
             </tr>
           ))}
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y divide-slate-100">
           {isLoading ? (
             renderSkeletonRows()
           ) : table.getRowModel().rows?.length ? (
@@ -134,7 +134,7 @@ export function DataTable<TData, TValue>({
                 <tr
                   key={row.id}
                   className={cn(
-                    "hover:bg-gray-50 transition-colors",
+                    "hover:bg-slate-50/80 transition-colors bg-white",
                     onRowClick && "cursor-pointer",
                     customRowClass
                   )}
@@ -143,7 +143,7 @@ export function DataTable<TData, TValue>({
                   {row.getVisibleCells().map((cell) => (
                     <td
                       key={cell.id}
-                      className={cn("px-6 py-3 text-sm text-gray-900", cellClassName)}
+                      className={cn("px-4 py-3.5 text-xs text-slate-800 font-medium whitespace-nowrap border-b border-slate-100", cellClassName)}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
@@ -155,7 +155,7 @@ export function DataTable<TData, TValue>({
             <tr>
               <td
                 colSpan={columns.length}
-                className="h-24 text-center text-sm text-gray-500"
+                className="h-24 text-center text-xs text-slate-400"
               >
                 {emptyMessage}
               </td>

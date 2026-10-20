@@ -20,6 +20,9 @@ import RoleAccessLevels from './components/AdminSetting/RoleAccessLevels';
 import NominationCycleMaster from './components/AdminSetting/NominationCycleMaster';
 import JuryPanelSetup from './components/AdminSetting/JuryPanelSetup';
 import AwardManagement from './components/Award/AwardManagement';
+import ProfileCardPage from './pages/ProfileCardPage';
+import RequestDetailsPage from './pages/RequestDetailsPage';
+import ModifyRequestPage from './pages/ModifyRequestPage';
 import Login from './pages/auth/Login/LoginPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -32,11 +35,11 @@ import { adminSubPageRoles } from './routes/routes.config';
 // Main page components
 // -------------------------
 const pageComponents: Record<string, React.ReactNode> = {
-  'Home': <HomePage />,
-  'Notifications': <NotificationsPage />,
+  Home: <HomePage />,
+  Notifications: <NotificationsPage />,
   'Self Nominations': <SelfNominationPage />,
   'My Nominations': <NominationPage />,
-  'Approvals': <ApprovalComponent />,
+  Approvals: <ApprovalComponent />,
   'Business Jury': <BusinessJury />,
   'President Unit': <PresidentUnit />,
   'President Level': <PresidentLevel />,
@@ -68,7 +71,7 @@ const App: React.FC = () => {
     setUserRole(storedRole);
   }, []);
 
-  if (userRole === undefined) return null; // wait for role
+  if (userRole === undefined) return null; // wait for role initialization
 
   return (
     <ErrorBoundary>
@@ -78,7 +81,7 @@ const App: React.FC = () => {
           {/* Public login route */}
           <Route path="/" element={<Login setUserRole={setUserRole} />} />
 
-          {/* Protected routes */}
+          {/* Protected routes wrapped in Layout */}
           <Route element={<Layout />}>
             {/* Main pages */}
             {Object.entries(pageComponents).map(([label, component]) => {
@@ -97,6 +100,63 @@ const App: React.FC = () => {
                 />
               );
             })}
+
+            {/* Prototype Route Aliases for seamless navigation */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute userRole={userRole} allowedRoles={getAllowedRoles('Home')}>
+                  <HomePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/create"
+              element={
+                <ProtectedRoute userRole={userRole} allowedRoles={getAllowedRoles('Self Nominations')}>
+                  <SelfNominationPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/my-requests"
+              element={
+                <ProtectedRoute userRole={userRole} allowedRoles={getAllowedRoles('My Nominations')}>
+                  <NominationPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile-card"
+              element={
+                <ProtectedRoute userRole={userRole} allowedRoles={getAllowedRoles('Profile Card')}>
+                  <ProfileCardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute userRole={userRole} allowedRoles={getAllowedRoles('Profile Card')}>
+                  <ProfileCardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/users"
+              element={
+                <ProtectedRoute userRole={userRole} allowedRoles={adminSubPageRoles['role-list']}>
+                  <RoleAccessLevels />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Inner Pages: Request Details & Modify */}
+            <Route path="/request/:id" element={<RequestDetailsPage />} />
+            <Route path="/requests/:id" element={<RequestDetailsPage />} />
+            <Route path="/my-nominations/:id" element={<RequestDetailsPage mode="my-requests" />} />
+            <Route path="/approvals/:id" element={<RequestDetailsPage mode="approvals" />} />
+            <Route path="/modify/:id" element={<ModifyRequestPage />} />
 
             {/* Admin sub-pages */}
             {Object.entries(adminSubPages).map(([slug, component]) => (

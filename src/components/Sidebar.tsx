@@ -1,15 +1,17 @@
-import React, { useState, useMemo } from 'react';
-import { 
-  LogOut, 
-  ChevronLeft, 
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  LogOut,
+  ChevronLeft,
   ChevronRight,
-  Search, 
-  X 
+  ChevronDown,
+  Search,
+  X,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import logo from '../assets/images/layout_logo.png';
+import whiteLogo from '../assets/images/white-logo.png';
 import type { UserRole } from '../dataTypes/roles';
 import { getFilteredMenu, isMenuItemActive } from '../config/menu.config';
+import { nominationService } from '../services/nominationService';
 
 export interface SidebarProps {
   isCollapsed: boolean;
@@ -18,18 +20,48 @@ export interface SidebarProps {
   onMobileClose: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ 
-  isCollapsed, 
-  isMobileOpen, 
-  onToggle, 
-  onMobileClose 
+export const Sidebar: React.FC<SidebarProps> = ({
+  isCollapsed,
+  isMobileOpen,
+  onToggle,
+  onMobileClose,
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const userRole = localStorage.getItem('userRole') as UserRole | null;
+  const userEmail = localStorage.getItem('userEmail') || (userRole ? `${userRole}@srmtech.com` : 'user@srmtech.com');
   const baseMenu = getFilteredMenu(userRole);
 
   const [search, setSearch] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(
+    location.pathname.startsWith('/admin-setting') || location.pathname.startsWith('/profile-card')
+  );
+  const [pendingCount, setPendingCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(3);
+
+  useEffect(() => {
+    const updateCounts = () => {
+      try {
+        const noms = nominationService.getNominations();
+        const pending = noms.filter((n) => n.status === 'Pending').length;
+        setPendingCount(pending);
+
+        const notifs = nominationService.getNotifications();
+        setUnreadCount(notifs.length > 0 ? notifs.length : 3);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    updateCounts();
+    window.addEventListener('easyapprove_nominations_updated', updateCounts);
+    window.addEventListener('easyapprove_notifications_updated', updateCounts);
+    return () => {
+      window.removeEventListener('easyapprove_nominations_updated', updateCounts);
+      window.removeEventListener('easyapprove_notifications_updated', updateCounts);
+    };
+  }, []);
+
   const isSearching = search.trim().length > 0;
 
   // Search filtering matching reference pattern
@@ -41,10 +73,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const handleLogout = () => {
     localStorage.removeItem('userRole');
+    localStorage.removeItem('userEmail');
+    localStorage.removeItem('srm_ap_session');
     navigate('/');
   };
 
-  // Target application active-menu color exception
+  // Critical Requirement: Exactly preserve established active-menu gradient
   const activeStyle: React.CSSProperties = {
     background: 'linear-gradient(90deg, rgb(8, 128, 94) 16%, rgb(24, 97, 174) 100%)',
     color: '#ffffff',
@@ -52,45 +86,86 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const showExpandedContent = !isCollapsed || isMobileOpen;
 
+  const getUserDisplayName = () => {
+    if (!userRole) return 'Ravi Kumar';
+    switch (userRole) {
+      case 'admin':
+        return 'System Administrator';
+      case 'manager':
+        return 'Manager Approver';
+      case 'jury':
+        return 'Jury Member';
+      case 'presidentUnit':
+        return 'President Unit';
+      case 'presidentLevel':
+        return 'President Level';
+      default:
+        return 'Ravi Kumar';
+    }
+  };
+
+  const getUserInitials = () => {
+    if (!userRole) return 'RK';
+    switch (userRole) {
+      case 'admin':
+        return 'SA';
+      case 'manager':
+        return 'MA';
+      case 'jury':
+        return 'JM';
+      case 'presidentUnit':
+        return 'PU';
+      case 'presidentLevel':
+        return 'PL';
+      default:
+        return 'RK';
+    }
+  };
+
   return (
     <>
       {/* Mobile backdrop */}
       {isMobileOpen && (
-        <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-xs z-40 lg:hidden transition-opacity" 
-          onClick={onMobileClose} 
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-xs z-40 lg:hidden transition-opacity"
+          onClick={onMobileClose}
         />
       )}
 
-      {/* Main Sidebar */}
-      <aside 
+      {/* Main Sidebar - Preserving White Background & Clean Border */}
+      <aside
         className={`fixed lg:static inset-y-0 left-0 z-50 bg-white border-r border-slate-200 text-slate-800 transition-all duration-300 ease-in-out shadow-sm flex flex-col
           ${isCollapsed ? 'lg:w-[68px]' : 'lg:w-64'} 
           ${isMobileOpen ? 'w-64 translate-x-0' : '-translate-x-full lg:translate-x-0'} 
           overflow-hidden`}
+        aria-label="Primary Navigation"
       >
         {/* Header with target logo and toggle button */}
-        <div className="h-14 px-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white">
-          <div className="flex items-center gap-2 overflow-hidden">
-            {showExpandedContent ? (
-              <img 
-                src={logo} 
-                alt="SRM Logo" 
-                className="h-8 w-auto object-contain shrink-0" 
+        <div className="h-16 px-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <div className="w-9 h-9 rounded-lg bg-emerald-700 flex items-center justify-center shadow-md shadow-emerald-700/20 shrink-0">
+              <img
+                src={whiteLogo}
+                alt="Easy Approve Logo"
+                className="w-7 h-7 object-contain"
               />
-            ) : (
-              <img 
-                src={logo} 
-                alt="SRM Logo" 
-                className="h-7 w-auto object-contain shrink-0" 
-              />
+            </div>
+            {showExpandedContent && (
+              <div className="min-w-0">
+                <span className="font-bold text-sm tracking-tight text-slate-900 block truncate">
+                  Easy Approve
+                </span>
+                <span className="text-[10px] uppercase tracking-wider text-emerald-700 font-semibold block truncate">
+                  Enterprise Suite
+                </span>
+              </div>
             )}
           </div>
 
           {/* Mobile close button */}
-          <button 
+          <button
             type="button"
-            onClick={onMobileClose} 
+            onClick={onMobileClose}
             className="lg:hidden p-1.5 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
             aria-label="Close sidebar"
           >
@@ -101,15 +176,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             type="button"
             onClick={onToggle}
-            className="hidden lg:flex items-center justify-center h-7 w-7 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="hidden lg:flex items-center justify-center h-7 w-7 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </button>
         </div>
 
-        {/* Menu Search (Hospital reference feature) */}
+        {/* Menu Search */}
         {showExpandedContent && (
           <div className="px-3 pt-3 pb-1 shrink-0">
             <div className="relative flex items-center">
@@ -118,7 +193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search menu..."
-                className="h-8 w-full rounded-md border border-slate-200 bg-slate-50/70 pl-8 pr-7 text-xs text-slate-800 outline-none placeholder:text-slate-400 focus:bg-white focus:border-slate-400 transition-all"
+                className="h-8 w-full rounded-md border border-slate-200 bg-slate-50/70 pl-8 pr-7 text-xs text-slate-800 outline-none placeholder:text-slate-400 focus:bg-white focus:border-emerald-600 transition-all"
               />
               {isSearching && (
                 <button
@@ -135,7 +210,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         {/* Navigation Content */}
-        <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
+        <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
           {isSearching && filteredMenu.length === 0 ? (
             <div className="px-3 py-4 text-xs text-slate-400 text-center">
               No menu items match &quot;{search}&quot;
@@ -144,7 +219,65 @@ export const Sidebar: React.FC<SidebarProps> = ({
             filteredMenu.map((item) => {
               const isActive = isMenuItemActive(location.pathname, item.url);
               const Icon = item.icon;
+              const hasSubmenu = item.items && item.items.length > 0;
 
+              if (hasSubmenu) {
+                return (
+                  <div key={item.title} className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => setSettingsOpen(!settingsOpen)}
+                      title={isCollapsed && !isMobileOpen ? item.title : undefined}
+                      className={`flex items-center gap-2.5 w-full h-9 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                        isCollapsed && !isMobileOpen ? 'justify-center px-0' : 'px-3'
+                      } ${
+                        isActive
+                          ? 'text-slate-900 font-semibold bg-slate-100'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+                      }`}
+                    >
+                      <Icon className="h-4 w-4 shrink-0 text-slate-500" />
+                      {showExpandedContent && (
+                        <>
+                          <span className="truncate flex-1 text-left">{item.title}</span>
+                          <ChevronDown
+                            className={`h-3.5 w-3.5 text-slate-400 transition-transform ${
+                              settingsOpen ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </>
+                      )}
+                    </button>
+
+                    {showExpandedContent && settingsOpen && (
+                      <div className="pl-6 space-y-1 py-1">
+                        {item.items?.map((sub) => {
+                          const isSubActive = location.pathname === sub.url;
+                          const SubIcon = sub.icon;
+                          return (
+                            <Link
+                              key={sub.title}
+                              to={sub.url}
+                              onClick={onMobileClose}
+                              className={`flex items-center gap-2 w-full h-8 px-2.5 rounded-md text-xs font-medium transition-colors ${
+                                isSubActive
+                                  ? 'shadow-xs font-semibold'
+                                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+                              }`}
+                              style={isSubActive ? activeStyle : undefined}
+                            >
+                              <SubIcon className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">{sub.title}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              // Normal Menu Item
               return (
                 <Link
                   key={item.title}
@@ -152,19 +285,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onClick={onMobileClose}
                   title={isCollapsed && !isMobileOpen ? item.title : undefined}
                   className={`flex items-center gap-2.5 w-full h-9 rounded-md text-xs font-medium transition-colors ${
-                    isCollapsed && !isMobileOpen 
-                      ? 'justify-center px-0' 
-                      : 'px-3'
+                    isCollapsed && !isMobileOpen ? 'justify-center px-0' : 'px-3'
                   } ${
-                    isActive 
-                      ? 'shadow-xs font-semibold' 
+                    isActive
+                      ? 'shadow-xs font-semibold'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
                   }`}
                   style={isActive ? activeStyle : undefined}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
                   {showExpandedContent && (
-                    <span className="truncate">{item.title}</span>
+                    <>
+                      <span className="truncate flex-1">{item.title}</span>
+                      {item.title === 'Notifications' && unreadCount > 0 && (
+                        <span className="ml-auto inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-rose-500 text-white min-w-4 h-4">
+                          {unreadCount}
+                        </span>
+                      )}
+                      {item.title === 'Approval List' && pendingCount > 0 && (
+                        <span className="ml-auto inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-amber-500 text-white min-w-4 h-4">
+                          {pendingCount}
+                        </span>
+                      )}
+                    </>
                   )}
                 </Link>
               );
@@ -172,18 +315,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* Footer with Logout */}
-        <div className="border-t border-slate-200 p-2 shrink-0 bg-white">
+        {/* Prototype Aligned User Footer */}
+        <div className="border-t border-slate-200 p-3 shrink-0 bg-slate-50/70">
+          <div className="flex items-center gap-2.5 mb-2.5">
+            <div className="w-8 h-8 rounded-full bg-emerald-700 text-white text-xs font-bold flex items-center justify-center shrink-0 shadow-xs">
+              {getUserInitials()}
+            </div>
+            {showExpandedContent && (
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold text-slate-800">
+                  {getUserDisplayName()}
+                </p>
+                <p className="truncate text-[10px] text-slate-500 font-mono">
+                  {userEmail}
+                </p>
+                <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-100 text-emerald-800">
+                  {userRole === 'admin' ? 'Administrator' : 'Employee'}
+                </span>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={handleLogout}
-            title={isCollapsed && !isMobileOpen ? "Logout" : undefined}
-            className={`flex items-center gap-2.5 w-full h-9 rounded-md text-xs font-semibold text-red-600 hover:text-red-700 hover:bg-red-50/70 transition-colors cursor-pointer ${
-              isCollapsed && !isMobileOpen ? 'justify-center px-0' : 'px-3'
+            title={isCollapsed && !isMobileOpen ? 'Log out' : undefined}
+            className={`flex items-center gap-2 w-full h-8 rounded-md text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer border border-slate-200/60 bg-white ${
+              isCollapsed && !isMobileOpen ? 'justify-center px-0' : 'px-2.5'
             }`}
           >
-            <LogOut className="h-4 w-4 shrink-0" />
-            {showExpandedContent && <span>Logout</span>}
+            <LogOut className="h-3.5 w-3.5 shrink-0" />
+            {showExpandedContent && <span>Log out</span>}
           </button>
         </div>
       </aside>

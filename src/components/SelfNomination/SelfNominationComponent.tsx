@@ -1,1097 +1,710 @@
-import React, { useState, useRef } from "react";
-import * as Label from "@radix-ui/react-label";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  Plane,
-  FolderGit2,
-  UploadCloud,
-  FileText,
+  Paperclip,
   X,
-  Plus,
-  CheckCircle2,
-  AlertCircle,
-  Building2,
-  User,
-  Phone,
-  Mail,
-  Calendar,
-  IndianRupee,
-  Briefcase,
-  Layers,
-} from "lucide-react";
+  UploadCloud,
+} from 'lucide-react';
 import {
-  nominationService,
-  DEPARTMENTS,
-  type DepartmentType,
-} from "@/services/nominationService";
-import type { NominationType, SupportingDocument } from "@/dataTypes/nomination";
-import { toast } from "@/components/ui/sonner";
-
-interface FormErrors {
-  title?: string;
-  nominee?: string;
-  department?: string;
-  nominationType?: string;
-  nomineeEmail?: string;
-  mobileNumber?: string;
-  managerEmail?: string;
-  referrals?: string[];
-  description?: string;
-  // Travel errors
-  travelPurpose?: string;
-  destination?: string;
-  departureDate?: string;
-  returnDate?: string;
-  estimatedCost?: string;
-  travelMode?: string;
-  // Project errors
-  projectName?: string;
-  domain?: string;
-  projectRole?: string;
-  duration?: string;
-  impact?: string;
-  documents?: string;
-}
+  GROUPS,
+  approversByGroup,
+  APPROVAL_TYPES,
+  BUDGET_OPTIONS,
+  formatINR,
+  getMinDeadlineDate,
+} from '@/config/approval.config';
+import { nominationService } from '@/services/nominationService';
+import type { SupportingDocument, NominationType } from '@/dataTypes/nomination';
+import { toast } from '@/components/ui/sonner';
 
 export default function SelfNominationComponent() {
   const navigate = useNavigate();
 
-  // Basic Form State
-  const [title, setTitle] = useState("");
-  const [nominee, setNominee] = useState("Ravi Kumar");
-  const [department, setDepartment] = useState<DepartmentType | "">("");
-  const [nominationType, setNominationType] = useState<NominationType>("Project");
-  const [nomineeEmail, setNomineeEmail] = useState("ravikumar381@srm.com");
-  const [mobileNumber, setMobileNumber] = useState("+91 98456 87321");
-  const [managerEmail, setManagerEmail] = useState("prasath16@srm.com");
+  // Form State matching HTML Prototype Exactly
+  const [group, setGroup] = useState('');
+  const [approverEmail, setApproverEmail] = useState('');
+  const [approverName, setApproverName] = useState('');
 
-  // Referrals State (minimum 3 mandatory)
-  const [referrals, setReferrals] = useState<string[]>([
-    "sathishkumar312@srm.com",
-    "kumaran@srm.com",
-    "manikandan@srm.com",
-  ]);
+  // CC Selection
+  const [ccGroup, setCcGroup] = useState('');
+  const [ccMemberSelect, setCcMemberSelect] = useState('');
+  const [ccEmails, setCcEmails] = useState<string[]>([]);
+  const [customCcInput, setCustomCcInput] = useState('');
 
-  // Travel Conditional Fields
-  const [travelPurpose, setTravelPurpose] = useState("");
-  const [destination, setDestination] = useState("");
-  const [departureDate, setDepartureDate] = useState("");
-  const [returnDate, setReturnDate] = useState("");
-  const [travelMode, setTravelMode] = useState("Flight");
-  const [estimatedCost, setEstimatedCost] = useState("");
-  const [travelJustification, setTravelJustification] = useState("");
+  // Request Content
+  const [title, setTitle] = useState('');
+  const [details, setDetails] = useState('');
+  const [reason, setReason] = useState('');
 
-  // Project Conditional Fields
-  const [projectName, setProjectName] = useState("");
-  const [projectDomain, setProjectDomain] = useState("");
-  const [projectRole, setProjectRole] = useState("Lead Contributor");
-  const [projectDuration, setProjectDuration] = useState("");
-  const [teamSize, setTeamSize] = useState("");
-  const [projectImpact, setProjectImpact] = useState("");
+  // Financials & Type
+  const [approvalType, setApprovalType] = useState('Expense Request');
+  const [amount, setAmount] = useState<string>('');
+  const [budgeted, setBudgeted] = useState('Yes');
+  const [amountBudgeted, setAmountBudgeted] = useState<string>('');
+  const [deadline, setDeadline] = useState(getMinDeadlineDate(2));
+  const [extraReason, setExtraReason] = useState('');
 
-  // Supporting Documents
-  const [documents, setDocuments] = useState<SupportingDocument[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
+  // Supporting Files
+  const [files, setFiles] = useState<SupportingDocument[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Description
-  const [description, setDescription] = useState("");
-
-  // Errors & Feedback
-  const [errors, setErrors] = useState<FormErrors>({});
+  // Validation Errors
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Referral helpers
-  const addReferral = () => setReferrals([...referrals, ""]);
-  const updateReferral = (index: number, value: string) => {
-    const updated = [...referrals];
-    updated[index] = value;
-    setReferrals(updated);
-  };
-  const removeReferral = (index: number) => {
-    if (referrals.length <= 1) return;
-    const updated = referrals.filter((_, idx) => idx !== index);
-    setReferrals(updated);
+  // Group Approver change handler
+  const handleGroupChange = (selectedGroup: string) => {
+    setGroup(selectedGroup);
+    setApproverEmail('');
+    setApproverName('');
+    if (errors.group) setErrors((prev) => ({ ...prev, group: '' }));
   };
 
-  // Email format validator
-  const isValidEmail = (email: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  // Approver Email change handler (auto-fills full name)
+  const handleApproverEmailChange = (email: string) => {
+    setApproverEmail(email);
+    const members = approversByGroup[group] || [];
+    const found = members.find((m) => m.email.toLowerCase() === email.toLowerCase());
+    setApproverName(found ? found.name : '');
+    if (errors.approverEmail) setErrors((prev) => ({ ...prev, approverEmail: '' }));
   };
-  // Reference validator to preserve functionality
-  if (false as boolean) {
-    isValidEmail("");
-  }
 
-  // Process Files Helper (used by file picker & drag-and-drop)
-  const processFiles = (files: FileList | File[]) => {
-    if (!files || files.length === 0) return;
+  // CC Group Selection
+  const handleCcMemberSelect = (email: string) => {
+    if (!email) return;
+    if (!ccEmails.includes(email)) {
+      setCcEmails([...ccEmails, email]);
+    }
+    setCcMemberSelect('');
+  };
 
-    setIsUploading(true);
-    const maxFiles = Array.from(files);
+  const addCustomCc = () => {
+    const trimmed = customCcInput.trim().toLowerCase();
+    if (!trimmed) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      toast.error('Please enter a valid email address.');
+      return;
+    }
+    if (!ccEmails.includes(trimmed)) {
+      setCcEmails([...ccEmails, trimmed]);
+    }
+    setCustomCcInput('');
+  };
 
-    maxFiles.forEach((file) => {
-      // Validate file size (< 10MB)
+  const removeCcEmail = (emailToRemove: string) => {
+    setCcEmails(ccEmails.filter((e) => e !== emailToRemove));
+  };
+
+  // Budget radio/select change handler
+  const handleBudgetedChange = (val: string) => {
+    setBudgeted(val);
+    if (val === 'No') {
+      setAmountBudgeted('0');
+    } else if (amountBudgeted === '0') {
+      setAmountBudgeted('');
+    }
+  };
+
+  // Check if expected amount exceeds budgeted amount
+  const parsedAmount = parseFloat(amount) || 0;
+  const parsedBudget = parseFloat(amountBudgeted) || 0;
+  const exceedsBudget = Boolean(budgeted && parsedAmount > 0 && parsedBudget > 0 && parsedAmount > parsedBudget);
+
+  // File Upload Handlers
+  const handleProcessFiles = (fileList: FileList | File[]) => {
+    const uploaded = Array.from(fileList);
+    if (files.length + uploaded.length > 4) {
+      toast.error('You can upload a maximum of 4 files.');
+      return;
+    }
+
+    uploaded.forEach((file) => {
       if (file.size > 10 * 1024 * 1024) {
-        alert(`File ${file.name} exceeds 10MB limit.`);
+        toast.error(`File ${file.name} exceeds 10MB limit.`);
         return;
       }
 
       const reader = new FileReader();
       reader.onload = () => {
         const doc: SupportingDocument = {
-          id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           name: file.name,
           size: file.size,
-          type: file.type || "application/octet-stream",
-          uploadedAt: new Date().toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          }),
-          dataUrl: typeof reader.result === "string" ? reader.result : undefined,
+          type: file.type || 'application/octet-stream',
+          uploadedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          dataUrl: typeof reader.result === 'string' ? reader.result : undefined,
         };
-        setDocuments((prev) => [...prev, doc]);
+        setFiles((prev) => [...prev, doc]);
       };
       reader.readAsDataURL(file);
     });
-
-    setIsUploading(false);
   };
 
-  // Secure File Upload Handler
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      processFiles(e.target.files);
-    }
-    // Reset file input value so re-selecting same file triggers change
-    e.target.value = "";
+  const removeFile = (docId?: string) => {
+    setFiles(files.filter((f) => f.id !== docId && f.name !== docId));
   };
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      processFiles(e.dataTransfer.files);
-    }
-  };
-
-  const removeDocument = (docId: string) => {
-    setDocuments((prev) => prev.filter((d) => d.id !== docId));
-  };
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  // Comprehensive Form Validation
-  const validateForm = (): boolean => {
-    const newErrors: FormErrors = {};
-
-    if (!title.trim()) {
-      newErrors.title = "Submission title is required.";
-    }
-
-    if (!nominee.trim()) {
-      newErrors.nominee = "Nominee name is required.";
-    }
-
-    if (!department) {
-      newErrors.department = "Please select a valid department.";
-    }
-
-    // Note: Hidden fields (nomineeEmail, managerEmail, referrals) use defaults without raising UI validation errors
-
-    // Conditional Fields Validation
-    if (nominationType === "Travel Expenses") {
-      if (!travelPurpose.trim()) {
-        newErrors.travelPurpose = "Travel purpose / reason is required.";
-      }
-      if (!destination.trim()) {
-        newErrors.destination = "Destination / venue is required.";
-      }
-      if (!departureDate) {
-        newErrors.departureDate = "Departure date is required.";
-      }
-      if (!returnDate) {
-        newErrors.returnDate = "Return date is required.";
-      } else if (departureDate && returnDate < departureDate) {
-        newErrors.returnDate = "Return date cannot be earlier than departure date.";
-      }
-      if (!estimatedCost.trim()) {
-        newErrors.estimatedCost = "Estimated travel expenses are required.";
-      }
-    } else if (nominationType === "Project") {
-      if (!projectName.trim()) {
-        newErrors.projectName = "Project name is required.";
-      }
-      if (!projectDomain.trim()) {
-        newErrors.domain = "Project domain / technology is required.";
-      }
-      if (!projectRole.trim()) {
-        newErrors.projectRole = "Role in project is required.";
-      }
-      if (!projectDuration.trim()) {
-        newErrors.duration = "Project duration or timeline is required.";
-      }
-      if (!projectImpact.trim()) {
-        newErrors.impact = "Project impact & deliverables are required.";
-      }
-    }
-
-    // Description is optional per requirement 1 - no mandatory validation
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  // Reset all form fields to initial state
-  const resetForm = () => {
-    setTitle("");
-    setDepartment("");
-    setNominationType("Project");
-
-    // Travel fields
-    setTravelPurpose("");
-    setDestination("");
-    setDepartureDate("");
-    setReturnDate("");
-    setTravelMode("Flight");
-    setEstimatedCost("");
-    setTravelJustification("");
-
-    // Project fields
-    setProjectName("");
-    setProjectDomain("");
-    setProjectRole("Lead Contributor");
-    setProjectDuration("");
-    setTeamSize("");
-    setProjectImpact("");
-
-    // Documents & file input
-    setDocuments([]);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-
-    // Description
-    setDescription("");
-
-    // Errors & feedback
-    setErrors({});
-  };
-
-  // Submission handler
+  // Form Validation & Submit
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const newErrors: Record<string, string> = {};
 
-    if (isSubmitting) return;
+    if (!group) newErrors.group = 'Select a Group.';
+    if (!approverEmail) newErrors.approverEmail = 'Select an approver official email.';
+    if (!approverName) newErrors.approverName = 'Approver name must be populated.';
+    if (!title.trim()) newErrors.title = 'Enter a request title.';
+    if (!details.trim()) newErrors.details = 'Provide details of request.';
+    if (!reason.trim()) newErrors.reason = 'Explain the reason for requirement.';
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      newErrors.amount = 'Enter a valid expected amount in INR.';
+    }
+    if (!budgeted) newErrors.budgeted = 'Select whether this item is budgeted.';
+    if (budgeted !== 'No' && (!amountBudgeted || isNaN(Number(amountBudgeted)))) {
+      newErrors.amountBudgeted = 'Enter the allocated budget amount.';
+    }
+    if (!deadline) newErrors.deadline = 'Select a valid deadline date.';
+    if (exceedsBudget && !extraReason.trim()) {
+      newErrors.extraReason = 'Mandatory when requested amount exceeds budgeted allocation.';
+    }
 
-    if (!validateForm()) {
-      // Scroll to the first error
-      window.scrollTo({ top: 100, behavior: "smooth" });
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      toast.error('Please fix the highlighted validation errors.');
       return;
     }
 
     setIsSubmitting(true);
 
-    try {
+    const currentUserEmail = localStorage.getItem('userEmail') || 'user@srmtech.com';
+    const currentUserName = currentUserEmail.split('@')[0].replace(/\./g, ' ');
+
+    setTimeout(() => {
+      // Connect to existing nominationService backend logic
       nominationService.createNomination({
         title: title.trim(),
-        nominee: nominee.trim(),
-        department,
-        entity: department,
-        category: nominationType === "Project" ? "Project Excellence" : "Travel Expenses",
-        nominationType,
-        mobileNumber: mobileNumber.trim(),
-        nomineeEmail: nomineeEmail.trim(),
-        managerEmail: managerEmail.trim(),
-        referrals: referrals.map((r) => r.trim()),
-        supportingDocuments: documents,
-        description: description.trim(),
-        travelDetails:
-          nominationType === "Travel Expenses"
-            ? {
-                purpose: travelPurpose.trim(),
-                destination: destination.trim(),
-                departureDate,
-                returnDate,
-                travelMode,
-                estimatedCost: estimatedCost.trim(),
-                justification: travelJustification.trim(),
-              }
-            : undefined,
-        projectDetails:
-          nominationType === "Project"
-            ? {
-                projectName: projectName.trim(),
-                domain: projectDomain.trim(),
-                projectRole: projectRole.trim(),
-                duration: projectDuration.trim(),
-                teamSize: teamSize.trim() || undefined,
-                impact: projectImpact.trim(),
-              }
-            : undefined,
-        originalSubmitter: nominee.trim(),
-        submittedBy: nominee.trim(),
+        nominee: currentUserName,
+        nomineeEmail: currentUserEmail,
+        department: group,
+        entity: group,
+        category: approvalType,
+        nominationType: (approvalType.includes('Travel') ? 'Travel Expenses' : 'Project') as NominationType,
+        type: approvalType,
+        amount: Number(amount) || 0,
+        deadline: deadline,
+        budgetAllocated: Number(amountBudgeted) || 0,
+        amountBudgeted: Number(amountBudgeted) || 0,
+        budgeted: budgeted,
+        isBudgeted: budgeted,
+        extraReason: extraReason,
+        approverName: approverName,
+        approverEmail: approverEmail,
+        requesterName: currentUserName,
+        requesterEmail: currentUserEmail,
+        createdAt: new Date().toISOString().split('T')[0],
+        assignedEmployee: approverName,
+        managerEmail: approverEmail,
+        referrals: ccEmails,
+        ccEmail: ccEmails.join(', '),
+        details: details.trim(),
+        reason: reason.trim(),
+        description: `${details}\n\nJustification: ${reason}${extraReason ? `\n\nExtra Budget Rationale: ${extraReason}` : ''}`,
+        supportingDocuments: files,
+        attachments: files.map((f) => ({
+          id: f.id,
+          name: f.name,
+          size: f.size,
+          type: f.type,
+          url: f.url,
+          uploadedAt: f.uploadedAt,
+        })),
+        travelDetails: approvalType.includes('Travel')
+          ? {
+            purpose: title,
+            destination: group,
+            departureDate: deadline,
+            returnDate: deadline,
+            travelMode: 'Official Flight / Transport',
+            estimatedCost: amount,
+            justification: reason,
+          }
+          : undefined,
+        projectDetails: !approvalType.includes('Travel')
+          ? {
+            projectName: title,
+            domain: group,
+            projectRole: 'Lead Proposer',
+            duration: 'Project Lifecycle',
+            impact: reason,
+            keyDeliverables: details,
+          }
+          : undefined,
       });
 
-      // 1. Immediately display Shadcn Success Toast notification
-      toast.success("Nomination submitted successfully!");
-
-      // 2. Clear all form fields after successful submission
-      resetForm();
-
-      // 3. Keep user on current page - do not redirect or navigate anywhere
-    } catch (err) {
-      console.error("Submission failed", err);
-      // 4. Handle Submission Errors - show error toast & preserve entered values
-      toast.error("Failed to submit nomination. Please try again.");
-    } finally {
       setIsSubmitting(false);
-    }
+      toast.success('Approval request submitted successfully!');
+      navigate('/my-nominations');
+    }, 400);
   };
 
   return (
-    <div className="p-5 ">
+    <div className="p-3.5 sm:p-6 max-w-6xl mx-auto space-y-6">
+      {/* Title & Description matching HTML Prototype */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+            Create Approval Request
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+            Submit a formal expenditure, travel, or process approval request into the multi-stage corporate governance chain.
+          </p>
+        </div>
+      </div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="p-6 md:p-8 border border-gray-200 rounded-xl bg-white shadow-sm nominate-form"
-      >
-        {/* Header */}
-        <div className="border-b border-gray-200 pb-5 mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+        {/* Single Card Layout matching prototype class 'card card-pad space-y-4' */}
+        <section className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 sm:p-6 lg:p-8 space-y-5">
+          {/* Row 1 – Three columns: SRM Group Approver | SRM Group Member Email | Approver Full Name */}
+          <div className="grid gap-4 sm:grid-cols-3">
             <div>
-              <h2 className="text-xl md:text-2xl font-bold text-gray-900">
-                Self Nominate Form
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Submit your self-nomination with comprehensive details, supporting
-                evidence, and verification contacts.
-              </p>
+              <label htmlFor="f-group" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                SRM Group Approver <span className="text-rose-500">*</span>
+              </label>
+              <select
+                id="f-group"
+                value={group}
+                onChange={(e) => handleGroupChange(e.target.value)}
+                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.group ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                  }`}
+              >
+                <option value="">Select Group</option>
+                {GROUPS.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+              {errors.group && <p className="text-[11px] text-rose-600 mt-1">{errors.group}</p>}
             </div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-full self-start sm:self-auto">
-              <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
-              Official Intake Cycle 2026
-            </span>
+
+            <div>
+              <label htmlFor="f-approverEmail" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                SRM Group Member Email <span className="text-rose-500">*</span>
+              </label>
+              <select
+                id="f-approverEmail"
+                value={approverEmail}
+                onChange={(e) => handleApproverEmailChange(e.target.value)}
+                disabled={!group}
+                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition disabled:bg-slate-50 disabled:text-slate-400 ${errors.approverEmail ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                  }`}
+              >
+                <option value="">{group ? 'Select Approver Email' : 'Select Group First'}</option>
+                {group &&
+                  (approversByGroup[group] || []).map((m) => (
+                    <option key={m.email} value={m.email}>
+                      {m.email}
+                    </option>
+                  ))}
+              </select>
+              {errors.approverEmail && <p className="text-[11px] text-rose-600 mt-1">{errors.approverEmail}</p>}
+            </div>
+
+            <div>
+              <label htmlFor="f-approverName" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Approver Full Name <span className="text-rose-500">*</span>
+              </label>
+              <input
+                id="f-approverName"
+                type="text"
+                readOnly
+                disabled
+                value={approverName}
+                placeholder="Auto-populated based on email selection"
+                className="w-full text-xs py-2.5 px-3 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 font-medium cursor-not-allowed"
+              />
+              {errors.approverName && <p className="text-[11px] text-rose-600 mt-1">{errors.approverName}</p>}
+            </div>
           </div>
-        </div>
 
-        {/* 1. Title of Submission */}
-        <div className="mb-6">
-          <Label.Root
-            htmlFor="title"
-            className="block text-sm font-semibold text-gray-700 mb-1.5"
-          >
-            Title of Submission <span className="text-red-500">*</span>
-          </Label.Root>
-          <input
-            id="title"
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. AI-Powered Healthcare Diagnostic Pipeline or London Oncology Summit"
-            className={`w-full border rounded-lg px-3.5 py-2.5 text-sm transition focus:outline-none focus:ring-2 ${errors.title
-                ? "border-red-400 bg-red-50/40 focus:ring-red-400"
-                : "border-gray-300 focus:ring-emerald-500"
-              }`}
-          />
-          {errors.title && (
-            <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
-              <AlertCircle size={12} /> {errors.title}
-            </p>
-          )}
-        </div>
+          {/* Row 2 – Two columns: SRM Group Mail for CC | SRM Group Member Email for CC */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="f-cc-group" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                SRM Group Mail for CC
+              </label>
+              <select
+                id="f-cc-group"
+                value={ccGroup}
+                onChange={(e) => {
+                  setCcGroup(e.target.value);
+                  setCcMemberSelect('');
+                }}
+                className="w-full text-xs py-2.5 px-3 rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition"
+              >
+                <option value="">Select Group</option>
+                {GROUPS.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        {/* Nominee Name & Department Dropdown */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <label htmlFor="f-cc-member-select" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                SRM Group Member Email for CC {ccGroup ? `(${ccGroup})` : ''}
+              </label>
+              <select
+                id="f-cc-member-select"
+                value={ccMemberSelect}
+                onChange={(e) => handleCcMemberSelect(e.target.value)}
+                disabled={!ccGroup}
+                className="w-full text-xs py-2.5 px-3 rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition disabled:bg-slate-50 disabled:text-slate-400"
+              >
+                <option value="">{ccGroup ? 'Select Member to CC' : 'Select Group First'}</option>
+                {ccGroup &&
+                  (approversByGroup[ccGroup] || []).map((m) => (
+                    <option key={m.email} value={m.email}>
+                      {m.name} ({m.email})
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 3 – Full width: Emails CC */}
           <div>
-            <Label.Root
-              htmlFor="nominee"
-              className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5"
-            >
-              <User size={15} className="text-gray-500" />
-              Nominee Name <span className="text-red-500">*</span>
-            </Label.Root>
+            <label htmlFor="f-cc-input" className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Emails CC <span className="text-slate-400 font-normal text-xs ml-1">Optional</span>
+            </label>
+            <div className="p-2 rounded-lg border border-slate-300 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-500/20 bg-white min-h-[42px] flex flex-wrap items-center gap-1.5 transition">
+              {ccEmails.map((eml) => (
+                <span
+                  key={eml}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200"
+                >
+                  <span>{eml}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeCcEmail(eml)}
+                    className="text-emerald-600 hover:text-emerald-900 cursor-pointer ml-0.5"
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+              <input
+                id="f-cc-input"
+                type="email"
+                value={customCcInput}
+                onChange={(e) => setCustomCcInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ',') {
+                    e.preventDefault();
+                    addCustomCc();
+                  }
+                }}
+                onBlur={addCustomCc}
+                placeholder={ccEmails.length === 0 ? 'Type email and press Enter or select from dropdown above...' : 'Add more...'}
+                className="flex-1 min-w-[200px] text-xs outline-none bg-transparent py-1 px-1 text-slate-800 placeholder:text-slate-400"
+              />
+            </div>
+          </div>
+
+          {/* Row 4 – Full width: Request Title */}
+          <div>
+            <label htmlFor="f-title" className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Request Title <span className="text-rose-500">*</span>
+            </label>
             <input
-              id="nominee"
+              id="f-title"
               type="text"
-              value={nominee}
-              onChange={(e) => setNominee(e.target.value)}
-              placeholder="e.g. Ravi Kumar"
-              className={`w-full border rounded-lg px-3.5 py-2.5 text-sm transition focus:outline-none focus:ring-2 ${errors.nominee
-                  ? "border-red-400 bg-red-50/40 focus:ring-red-400"
-                  : "border-gray-300 focus:ring-emerald-500"
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                if (errors.title) setErrors((prev) => ({ ...prev, title: '' }));
+              }}
+              placeholder="e.g. Developer Laptops for Q4 Engineering Onboarding"
+              className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.title ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
                 }`}
             />
-            {errors.nominee && (
-              <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
-                <AlertCircle size={12} /> {errors.nominee}
-              </p>
-            )}
+            {errors.title && <p className="text-[11px] text-rose-600 mt-1">{errors.title}</p>}
           </div>
 
+          {/* Row 5 – Full width: Details of Request */}
           <div>
-            <Label.Root
-              htmlFor="department"
-              className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5"
-            >
-              <Building2 size={15} className="text-gray-500" />
-              Department <span className="text-red-500">*</span>
-            </Label.Root>
-            <select
-              id="department"
-              value={department}
-              onChange={(e) => setDepartment(e.target.value as DepartmentType)}
-              className={`w-full border rounded-lg px-3.5 py-2.5 text-sm bg-white transition focus:outline-none focus:ring-2 appearance-none cursor-pointer ${errors.department
-                  ? "border-red-400 bg-red-50/40 focus:ring-red-400"
-                  : "border-gray-300 focus:ring-emerald-500"
-                }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
-                backgroundPosition: "right 0.75rem center",
-                backgroundRepeat: "no-repeat",
-                backgroundSize: "1.25em 1.25em",
-                paddingRight: "2.5rem",
+            <label htmlFor="f-details" className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Details of Request <span className="text-rose-500">*</span>
+            </label>
+            <textarea
+              id="f-details"
+              rows={3}
+              value={details}
+              onChange={(e) => {
+                setDetails(e.target.value);
+                if (errors.details) setErrors((prev) => ({ ...prev, details: '' }));
               }}
-            >
-              <option value="">-- Select Department --</option>
-              {DEPARTMENTS.map((dept) => (
-                <option key={dept} value={dept}>
-                  {dept}
-                </option>
-              ))}
-            </select>
-            {errors.department && (
-              <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
-                <AlertCircle size={12} /> {errors.department}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* 2. Select Nomination Type (Segmented Cards) */}
-        <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-xl">
-          <Label.Root className="block text-sm font-semibold text-gray-800 mb-2.5">
-            Select Nomination Type <span className="text-red-500">*</span>
-          </Label.Root>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Project Option */}
-            <label
-              className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${nominationType === "Project"
-                  ? "border-emerald-600 bg-emerald-50/60 shadow-xs"
-                  : "border-gray-200 bg-white hover:border-gray-300"
+              placeholder="Provide specifications, quantities, scope of work, or change parameters..."
+              className={`w-full text-xs p-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.details ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
                 }`}
-            >
-              <input
-                type="radio"
-                name="nominationType"
-                value="Project"
-                checked={nominationType === "Project"}
-                onChange={() => setNominationType("Project")}
-                className="mt-1 text-emerald-600 focus:ring-emerald-500"
-              />
-              <div>
-                <div className="flex items-center gap-2">
-                  <FolderGit2
-                    size={18}
-                    className={
-                      nominationType === "Project" ? "text-emerald-700" : "text-gray-500"
-                    }
-                  />
-                  <span
-                    className={`font-semibold text-sm ${nominationType === "Project" ? "text-emerald-900" : "text-gray-800"
-                      }`}
-                  >
-                    Project
-                  </span>
-                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                    Reassignable
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Nominate institutional projects, research initiatives, and technical
-                  achievements.
-                </p>
-              </div>
-            </label>
+            />
+            {errors.details && <p className="text-[11px] text-rose-600 mt-1">{errors.details}</p>}
+          </div>
 
-            {/* Travel Expenses Option */}
-            <label
-              className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${nominationType === "Travel Expenses"
-                  ? "border-blue-600 bg-blue-50/60 shadow-xs"
-                  : "border-gray-200 bg-white hover:border-gray-300"
+          {/* Row 6 – Full width: Reason For Requirement */}
+          <div>
+            <label htmlFor="f-reason" className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Reason For Requirement <span className="text-rose-500">*</span>
+            </label>
+            <textarea
+              id="f-reason"
+              rows={3}
+              value={reason}
+              onChange={(e) => {
+                setReason(e.target.value);
+                if (errors.reason) setErrors((prev) => ({ ...prev, reason: '' }));
+              }}
+              placeholder="Explain the operational or commercial necessity..."
+              className={`w-full text-xs p-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.reason ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
                 }`}
-            >
-              <input
-                type="radio"
-                name="nominationType"
-                value="Travel Expenses"
-                checked={nominationType === "Travel Expenses"}
-                onChange={() => setNominationType("Travel Expenses")}
-                className="mt-1 text-blue-600 focus:ring-blue-500"
-              />
-              <div>
-                <div className="flex items-center gap-2">
-                  <Plane
-                    size={18}
-                    className={
-                      nominationType === "Travel Expenses"
-                        ? "text-blue-700"
-                        : "text-gray-500"
-                    }
-                  />
-                  <span
-                    className={`font-semibold text-sm ${nominationType === "Travel Expenses"
-                        ? "text-blue-900"
-                        : "text-gray-800"
-                      }`}
-                  >
-                    Travel Expenses
+            />
+            {errors.reason && <p className="text-[11px] text-rose-600 mt-1">{errors.reason}</p>}
+          </div>
+
+          {/* Row 7 – Three columns: Approval Category | Expected Amount Including Taxes (INR) | Is This Budgeted in FY Allocation? */}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <label htmlFor="f-type" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Approval Category <span className="text-rose-500">*</span>
+              </label>
+              <select
+                id="f-type"
+                value={approvalType}
+                onChange={(e) => setApprovalType(e.target.value)}
+                className="w-full text-xs py-2.5 px-3 rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition"
+              >
+                {APPROVAL_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="f-amount" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Expected Amount Including Taxes (INR) <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  id="f-amount"
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => {
+                    setAmount(e.target.value);
+                    if (errors.amount) setErrors((prev) => ({ ...prev, amount: '' }));
+                  }}
+                  placeholder="0.00"
+                  className={`w-full text-xs py-2.5 pl-3 pr-8 rounded-lg border bg-white focus:outline-none focus:ring-2 transition font-mono ${errors.amount ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                    }`}
+                />
+              </div>
+              <div className="flex items-center justify-between mt-1">
+                {amount && !isNaN(Number(amount)) && (
+                  <span className="font-mono text-xs font-bold text-emerald-700">
+                    {formatINR(amount)}
                   </span>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Claim business travel, conference representation, academic visits, or field
-                  deployment.
-                </p>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        {/* 3. Conditional Form Fields */}
-        {nominationType === "Travel Expenses" ? (
-          <div className="mb-6 p-5 bg-blue-50/40 border border-blue-200/80 rounded-xl animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 mb-4 pb-2 border-b border-blue-200/60">
-              <Plane className="w-5 h-5 text-blue-600" />
-              <h3 className="text-sm font-bold text-blue-950 uppercase tracking-wider">
-                Travel Expenses Details
-              </h3>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
-              <div>
-                <Label.Root className="block text-xs font-semibold text-gray-700 mb-1">
-                  Travel Purpose / Reason <span className="text-red-500">*</span>
-                </Label.Root>
-                <input
-                  type="text"
-                  value={travelPurpose}
-                  onChange={(e) => setTravelPurpose(e.target.value)}
-                  placeholder="e.g. World Health Conference Presentation"
-                  className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${errors.travelPurpose
-                      ? "border-red-400 bg-red-50/40"
-                      : "border-gray-300"
-                    }`}
-                />
-                {errors.travelPurpose && (
-                  <p className="text-xs text-red-600 mt-1">{errors.travelPurpose}</p>
                 )}
-              </div>
-
-              <div>
-                <Label.Root className="block text-xs font-semibold text-gray-700 mb-1">
-                  Destination / Venue <span className="text-red-500">*</span>
-                </Label.Root>
-                <input
-                  type="text"
-                  value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  placeholder="e.g. Geneva, Switzerland or New Delhi AI Summit"
-                  className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${errors.destination
-                      ? "border-red-400 bg-red-50/40"
-                      : "border-gray-300"
-                    }`}
-                />
-                {errors.destination && (
-                  <p className="text-xs text-red-600 mt-1">{errors.destination}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-4">
-              <div>
-                <Label.Root className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
-                  <Calendar size={13} className="text-gray-400" />
-                  Departure Date <span className="text-red-500">*</span>
-                </Label.Root>
-                <input
-                  type="date"
-                  value={departureDate}
-                  onChange={(e) => setDepartureDate(e.target.value)}
-                  className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${errors.departureDate
-                      ? "border-red-400 bg-red-50/40"
-                      : "border-gray-300"
-                    }`}
-                />
-                {errors.departureDate && (
-                  <p className="text-xs text-red-600 mt-1">{errors.departureDate}</p>
-                )}
-              </div>
-
-              <div>
-                <Label.Root className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
-                  <Calendar size={13} className="text-gray-400" />
-                  Return Date <span className="text-red-500">*</span>
-                </Label.Root>
-                <input
-                  type="date"
-                  value={returnDate}
-                  onChange={(e) => setReturnDate(e.target.value)}
-                  className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${errors.returnDate
-                      ? "border-red-400 bg-red-50/40"
-                      : "border-gray-300"
-                    }`}
-                />
-                {errors.returnDate && (
-                  <p className="text-xs text-red-600 mt-1">{errors.returnDate}</p>
-                )}
-              </div>
-
-              <div>
-                <Label.Root className="block text-xs font-semibold text-gray-700 mb-1">
-                  Mode of Travel
-                </Label.Root>
-                <select
-                  value={travelMode}
-                  onChange={(e) => setTravelMode(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-                >
-                  <option value="Flight">Flight</option>
-                  <option value="Train">Train</option>
-                  <option value="Road">Road / Car / Bus</option>
-                  <option value="Multiple">Multiple Modes</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <Label.Root className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
-                  <IndianRupee size={13} className="text-gray-400" />
-                  Estimated / Claimed Expenses (₹) <span className="text-red-500">*</span>
-                </Label.Root>
-                <input
-                  type="text"
-                  value={estimatedCost}
-                  onChange={(e) => setEstimatedCost(e.target.value)}
-                  placeholder="e.g. 45,000"
-                  className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${errors.estimatedCost
-                      ? "border-red-400 bg-red-50/40"
-                      : "border-gray-300"
-                    }`}
-                />
-                {errors.estimatedCost && (
-                  <p className="text-xs text-red-600 mt-1">{errors.estimatedCost}</p>
-                )}
-              </div>
-
-              <div>
-                <Label.Root className="block text-xs font-semibold text-gray-700 mb-1">
-                  Travel Justification / ROI
-                </Label.Root>
-                <input
-                  type="text"
-                  value={travelJustification}
-                  onChange={(e) => setTravelJustification(e.target.value)}
-                  placeholder="e.g. Represented institution in multi-center research symposium"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-                />
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="mb-6 p-5 bg-emerald-50/40 border border-emerald-200/80 rounded-xl animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 mb-4 pb-2 border-b border-emerald-200/60">
-              <FolderGit2 className="w-5 h-5 text-emerald-600" />
-              <h3 className="text-sm font-bold text-emerald-950 uppercase tracking-wider">
-                Project-Related Details
-              </h3>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
-              <div>
-                <Label.Root className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
-                  <Briefcase size={13} className="text-gray-400" />
-                  Project Name <span className="text-red-500">*</span>
-                </Label.Root>
-                <input
-                  type="text"
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
-                  placeholder="e.g. Autonomous Robotic Surgery Assistant"
-                  className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${errors.projectName
-                      ? "border-red-400 bg-red-50/40"
-                      : "border-gray-300"
-                    }`}
-                />
-                {errors.projectName && (
-                  <p className="text-xs text-red-600 mt-1">{errors.projectName}</p>
-                )}
-              </div>
-
-              <div>
-                <Label.Root className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
-                  <Layers size={13} className="text-gray-400" />
-                  Domain / Technology <span className="text-red-500">*</span>
-                </Label.Root>
-                <input
-                  type="text"
-                  value={projectDomain}
-                  onChange={(e) => setProjectDomain(e.target.value)}
-                  placeholder="e.g. AI / Healthcare Diagnostics / IoT"
-                  className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${errors.domain
-                      ? "border-red-400 bg-red-50/40"
-                      : "border-gray-300"
-                    }`}
-                />
-                {errors.domain && (
-                  <p className="text-xs text-red-600 mt-1">{errors.domain}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-4">
-              <div>
-                <Label.Root className="block text-xs font-semibold text-gray-700 mb-1">
-                  Role in Project <span className="text-red-500">*</span>
-                </Label.Root>
-                <input
-                  type="text"
-                  value={projectRole}
-                  onChange={(e) => setProjectRole(e.target.value)}
-                  placeholder="e.g. Principal Investigator / Lead Architect"
-                  className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${errors.projectRole
-                      ? "border-red-400 bg-red-50/40"
-                      : "border-gray-300"
-                    }`}
-                />
-                {errors.projectRole && (
-                  <p className="text-xs text-red-600 mt-1">{errors.projectRole}</p>
-                )}
-              </div>
-
-              <div>
-                <Label.Root className="block text-xs font-semibold text-gray-700 mb-1">
-                  Project Duration <span className="text-red-500">*</span>
-                </Label.Root>
-                <input
-                  type="text"
-                  value={projectDuration}
-                  onChange={(e) => setProjectDuration(e.target.value)}
-                  placeholder="e.g. 8 Months (Jan 2025 - Aug 2025)"
-                  className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${errors.duration
-                      ? "border-red-400 bg-red-50/40"
-                      : "border-gray-300"
-                    }`}
-                />
-                {errors.duration && (
-                  <p className="text-xs text-red-600 mt-1">{errors.duration}</p>
-                )}
-              </div>
-
-              <div>
-                <Label.Root className="block text-xs font-semibold text-gray-700 mb-1">
-                  Team Size & Collaborators
-                </Label.Root>
-                <input
-                  type="text"
-                  value={teamSize}
-                  onChange={(e) => setTeamSize(e.target.value)}
-                  placeholder="e.g. 6 Members"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-                />
+                {errors.amount && <p className="text-[11px] text-rose-600">{errors.amount}</p>}
               </div>
             </div>
 
             <div>
-              <Label.Root className="block text-xs font-semibold text-gray-700 mb-1">
-                Project Impact & Deliverables <span className="text-red-500">*</span>
-              </Label.Root>
-              <textarea
-                value={projectImpact}
-                onChange={(e) => setProjectImpact(e.target.value)}
-                placeholder="Detail key milestones, quantifiable metric improvements, institutional benefits, patents, or publications achieved..."
-                className={`w-full border rounded-lg px-3 py-2 text-sm bg-white h-20 resize-none ${errors.impact
-                    ? "border-red-400 bg-red-50/40"
-                    : "border-gray-300"
+              <label htmlFor="f-budgeted" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Is This Budgeted in FY Allocation? <span className="text-rose-500">*</span>
+              </label>
+              <select
+                id="f-budgeted"
+                value={budgeted}
+                onChange={(e) => handleBudgetedChange(e.target.value)}
+                className="w-full text-xs py-2.5 px-3 rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition"
+              >
+                {BUDGET_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 8 – Two columns: Allocated Budget Amount (INR) | Deadline Date */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="f-amountBudgeted" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Allocated Budget Amount (INR) <span className="text-rose-500">*</span>
+              </label>
+              <input
+                id="f-amountBudgeted"
+                type="number"
+                min="0"
+                step="any"
+                disabled={budgeted === 'No'}
+                value={amountBudgeted}
+                onChange={(e) => {
+                  setAmountBudgeted(e.target.value);
+                  if (errors.amountBudgeted) setErrors((prev) => ({ ...prev, amountBudgeted: '' }));
+                }}
+                placeholder={budgeted === 'No' ? '0' : '0.00'}
+                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition font-mono disabled:bg-slate-50 disabled:text-slate-400 ${errors.amountBudgeted ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
                   }`}
               />
-              {errors.impact && (
-                <p className="text-xs text-red-600 mt-1">{errors.impact}</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* 4. Email IDs & Referrals (Hidden from UI while preserving data, state, and submission logic) */}
-        <div className="hidden" aria-hidden="true">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div>
-              <Label.Root
-                htmlFor="nomineeEmail"
-                className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5"
-              >
-                <Mail size={15} className="text-gray-500" />
-                Nominee Email ID <span className="text-red-500">*</span>
-              </Label.Root>
-              <input
-                id="nomineeEmail"
-                type="email"
-                value={nomineeEmail}
-                onChange={(e) => setNomineeEmail(e.target.value)}
-                placeholder="e.g. ravikumar381@srm.com"
-                className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm"
-              />
-            </div>
-
-            <div>
-              <Label.Root
-                htmlFor="mobileNumber"
-                className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5"
-              >
-                <Phone size={15} className="text-gray-500" />
-                Mobile Number
-              </Label.Root>
-              <input
-                id="mobileNumber"
-                type="tel"
-                value={mobileNumber}
-                onChange={(e) => setMobileNumber(e.target.value)}
-                placeholder="+91 98456 87321"
-                className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            {/* Manager Email */}
-            <div>
-              <Label.Root
-                htmlFor="managerEmail"
-                className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5"
-              >
-                <Mail size={15} className="text-gray-500" />
-                Manager Email ID <span className="text-red-500">*</span>
-              </Label.Root>
-              <input
-                id="managerEmail"
-                type="email"
-                value={managerEmail}
-                onChange={(e) => setManagerEmail(e.target.value)}
-                placeholder="e.g. prasath16@srm.com"
-                className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Your direct reporting manager will receive the nomination review request.
+              <p className="text-[11px] text-slate-400 mt-1">
+                {budgeted === 'No' ? 'Defaults to ₹ 0 if not budgeted.' : 'Enter the approved departmental budget cap.'}
               </p>
+              {errors.amountBudgeted && <p className="text-[11px] text-rose-600">{errors.amountBudgeted}</p>}
             </div>
 
-            {/* Referral Email IDs */}
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <Label.Root className="block text-sm font-semibold text-gray-700">
-                  Referral Email IDs{" "}
-                  <span className="text-red-500 font-bold">(mandatory 3*)</span>
-                </Label.Root>
-                <span className="text-xs text-gray-500 font-mono">
-                  {referrals.length} listed
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                {referrals.map((ref, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <input
-                      type="email"
-                      value={ref}
-                      onChange={(e) => updateReferral(idx, e.target.value)}
-                      placeholder={`Referral ${idx + 1} email`}
-                      className="flex-1 border border-gray-300 rounded-lg px-3.5 py-2 text-sm"
-                    />
-                    {referrals.length > 3 && (
-                      <button
-                        type="button"
-                        onClick={() => removeReferral(idx)}
-                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                        title="Remove referral"
-                      >
-                        <X size={16} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <button
-                type="button"
-                onClick={addReferral}
-                className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition"
-              >
-                <Plus size={14} /> Add Another Referral
-              </button>
+              <label htmlFor="f-deadline" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Deadline Date <span className="text-rose-500">*</span>
+              </label>
+              <input
+                id="f-deadline"
+                type="date"
+                min={getMinDeadlineDate(2)}
+                value={deadline}
+                onChange={(e) => {
+                  setDeadline(e.target.value);
+                  if (errors.deadline) setErrors((prev) => ({ ...prev, deadline: '' }));
+                }}
+                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.deadline ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                  }`}
+              />
+              <p className="text-[11px] text-slate-400 mt-1">Minimum 2 business days required.</p>
+              {errors.deadline && <p className="text-[11px] text-rose-600">{errors.deadline}</p>}
             </div>
           </div>
-        </div>
 
-        {/* 5. Upload Supporting Documents */}
-        <div className="mb-6">
-          <Label.Root className="block text-sm font-semibold text-gray-700 mb-1.5">
-            Supporting Documents (Certificates, Invoices, Project Reports)
-          </Label.Root>
-
-          {/* Hidden system file picker input accessed via fileInputRef */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".pdf,.doc,.docx,.xlsx,.png,.jpg,.jpeg"
-            onChange={handleFileUpload}
-            className="hidden"
-            disabled={isUploading}
-          />
-
-          {/* Entire upload box is clickable and supports drag & drop */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => fileInputRef.current?.click()}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                fileInputRef.current?.click();
-              }
-            }}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-xl p-5 text-center transition cursor-pointer select-none ${
-              isDragging
-                ? "border-emerald-500 bg-emerald-50/80 scale-[1.005]"
-                : "border-gray-300 bg-gray-50/60 hover:bg-gray-50 hover:border-gray-400"
-            }`}
-          >
-            <UploadCloud className="w-8 h-8 text-gray-400 mx-auto mb-2 pointer-events-none" />
-            <p className="text-sm text-gray-600">
-              Drag & drop files here, or{" "}
-              <span
-                onClick={(e) => {
-                  // Prevent duplicate file picker trigger since parent container is clickable
-                  e.stopPropagation();
-                  fileInputRef.current?.click();
+          {/* Row 9 – Full width (conditional): Reason for Extra Expense */}
+          {exceedsBudget && (
+            <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2">
+              <label htmlFor="f-extraReason" className="block text-xs font-semibold text-amber-900">
+                Reason for Extra Expense <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                id="f-extraReason"
+                rows={3}
+                value={extraReason}
+                onChange={(e) => {
+                  setExtraReason(e.target.value);
+                  if (errors.extraReason) setErrors((prev) => ({ ...prev, extraReason: '' }));
                 }}
-                className="text-emerald-700 font-semibold cursor-pointer hover:underline"
-              >
-                browse files
-              </span>
-            </p>
-            <p className="text-xs text-gray-400 mt-1 pointer-events-none">
-              Supports PDF, DOCX, XLSX, JPG, PNG (up to 10MB each)
-            </p>
-          </div>
+                placeholder="Explain why the requested expenditure exceeds the allocated budget..."
+                className={`w-full text-xs p-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.extraReason ? 'border-rose-400 focus:ring-rose-200' : 'border-amber-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                  }`}
+              />
+              <p className="text-[11px] text-amber-800">
+                Mandatory when requested amount exceeds budgeted allocation.
+              </p>
+              {errors.extraReason && <p className="text-[11px] text-rose-600">{errors.extraReason}</p>}
+            </div>
+          )}
 
-          {/* List of uploaded documents */}
-          {documents.length > 0 && (
-            <div className="mt-3 space-y-2">
-              <span className="text-xs font-semibold text-gray-600 block">
-                Attached Files ({documents.length}):
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {documents.map((doc) => (
+          {/* Row 10 – Full width: Supporting Files & Quotations */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Supporting Files &amp; Quotations <span className="text-slate-400 font-normal text-xs ml-1">Optional, up to 4 files</span>
+            </label>
+
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                if (e.dataTransfer.files) handleProcessFiles(e.dataTransfer.files);
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              className={`p-6 border-2 border-dashed rounded-xl flex flex-col items-center justify-center text-center cursor-pointer transition ${isDragging ? 'border-emerald-500 bg-emerald-50/40' : 'border-slate-200 hover:border-slate-300 bg-slate-50/50'
+                }`}
+            >
+              <UploadCloud size={32} className="text-slate-400 mb-2" />
+              <p className="text-xs font-medium text-slate-700">
+                Click to browse or drag and drop supporting documentation
+              </p>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Accepts PDF, Excel, Word, CSV, and image files up to 10 MB each.
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files) handleProcessFiles(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+
+            {/* Uploaded File List */}
+            {files.length > 0 && (
+              <div className="mt-3 grid gap-2">
+                {files.map((file) => (
                   <div
-                    key={doc.id}
-                    className="flex items-center justify-between p-2.5 border border-gray-200 rounded-lg bg-white shadow-2xs"
+                    key={file.id}
+                    className="p-2.5 rounded-lg border border-slate-200 bg-white flex items-center justify-between text-xs"
                   >
-                    <div className="flex items-center gap-2 overflow-hidden">
-                      <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <div className="overflow-hidden">
-                        <p className="text-xs font-medium text-gray-900 truncate">
-                          {doc.name}
-                        </p>
-                        <p className="text-[10px] text-gray-400">
-                          {formatFileSize(doc.size)} • {doc.uploadedAt}
-                        </p>
-                      </div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Paperclip size={14} className="text-emerald-700 shrink-0" />
+                      <span className="font-medium text-slate-800 truncate">{file.name}</span>
+                      <span className="text-slate-400 text-[10px]">
+                        ({Math.round(file.size / 1024)} KB)
+                      </span>
                     </div>
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeDocument(doc.id);
-                      }}
-                      className="p-1 text-gray-400 hover:text-red-500 rounded hover:bg-red-50 transition cursor-pointer"
-                      title="Remove file"
+                      onClick={() => removeFile(file.id)}
+                      className="p-1 rounded text-slate-400 hover:text-rose-600 transition cursor-pointer"
                     >
                       <X size={14} />
                     </button>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* 6. Description (Optional - without required validation) */}
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-1.5">
-            <Label.Root
-              htmlFor="description"
-              className="block text-sm font-semibold text-gray-700"
-            >
-              Description & Summary
-            </Label.Root>
-            <span className="text-xs text-gray-400">
-              {description.length}/1000 characters
-            </span>
+            )}
           </div>
-          <textarea
-            id="description"
-            maxLength={1000}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Provide a summary of your contribution, why this nomination qualifies for recognition, and specific outcomes achieved..."
-            className="w-full border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm transition focus:outline-none focus:ring-2 focus:ring-emerald-500 h-28 resize-none"
-          />
-        </div>
+        </section>
 
-        {/* Action Buttons */}
-        <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-3 pt-4 border-t border-gray-200">
-          <button
-            type="button"
-            onClick={() => navigate("/my-nominations")}
-            className="w-full sm:w-auto px-5 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition"
-          >
-            Cancel
-          </button>
+        {/* Action Buttons matching HTML prototype */}
+        <div className="flex flex-wrap items-center gap-3">
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full sm:w-auto px-6 py-2.5 btn-theme text-sm font-semibold transition shadow-sm hover:opacity-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+            className="px-6 py-2.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs shadow-md shadow-emerald-700/20 transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
           >
             {isSubmitting ? (
-              <span>Submitting...</span>
+              <i className="fa-solid fa-circle-notch fa-spin"></i>
             ) : (
-              <>
-                <CheckCircle2 size={16} /> Submit Nomination
-              </>
+              <i className="fa-solid fa-paper-plane"></i>
             )}
+            <span>Submit For Approval</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate('/my-nominations')}
+            className="px-5 py-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs transition cursor-pointer"
+          >
+            Cancel
           </button>
         </div>
       </form>

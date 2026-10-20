@@ -42,14 +42,14 @@ export const TableSearch: React.FC<TableSearchProps> = ({
 
   return (
     <div className={cn("relative w-full", className)}>
-      <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
       <input
         type="text"
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
         placeholder={placeholder}
         className={cn(
-          "pl-8 pr-8 py-1.5 border border-gray-300 rounded-md w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
+          "pl-9 pr-8 py-2 border border-slate-200 rounded-lg w-full text-xs text-slate-800 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all",
           inputClassName
         )}
       />

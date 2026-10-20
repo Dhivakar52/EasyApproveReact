@@ -1,8 +1,11 @@
 export interface SystemNotification {
+  id?: string;
   title: string;
   message: string;
   time: string;
-  type: "Referral Request" | "New Referral Request" | "Nomination Approval Required" | "Nomination Approved";
+  type: string;
+  read?: boolean;
+  requestId?: string;
 }
 
 export const MOCK_NOTIFICATIONS: SystemNotification[] = [

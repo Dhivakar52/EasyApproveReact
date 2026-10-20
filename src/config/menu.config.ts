@@ -1,12 +1,12 @@
 import {
-  Home,
+  LayoutDashboard,
   Bell,
-  User,
+  PlusCircle,
   FileText,
-  CircleCheckBig,
-  Gavel,
-  Users,
+  CheckSquare,
   Settings,
+  Users,
+  IdCard,
 } from 'lucide-react';
 import type { ElementType } from 'react';
 import { type UserRole, ROLE_PAGES } from '../dataTypes/roles';
@@ -28,18 +28,23 @@ export interface MenuItem {
   items?: SubMenuItem[];
 }
 
-// ✅ Centralized menu configuration
+// Prototype aligned navigation structure
 export const menuConfig: MenuItem[] = [
-  { title: 'Home', url: '/home', icon: Home },
+  { title: 'Dashboard', url: '/home', icon: LayoutDashboard },
   { title: 'Notifications', url: '/notifications', icon: Bell },
-  { title: 'Self Nominations', url: '/self-nominations', icon: User },
-  { title: 'My Nominations', url: '/my-nominations', icon: FileText },
-  { title: 'Approvals', url: '/approvals', icon: CircleCheckBig },
-  { title: 'Business Jury', url: '/business-jury', icon: Gavel },
-  { title: 'President Unit', url: '/president-unit', icon: Gavel },
-  { title: 'President Level', url: '/president-level', icon: Users },
-  { title: 'Award Management', url: '/award-management', icon: Settings },
-  { title: 'Admin Setting', url: '/admin-setting', icon: Settings },
+  { title: 'Create Request', url: '/self-nominations', icon: PlusCircle },
+  { title: 'My Requests', url: '/my-nominations', icon: FileText },
+  { title: 'Approval List', url: '/approvals', icon: CheckSquare },
+  {
+    title: 'Settings',
+    url: '/admin-setting',
+    icon: Settings,
+    roles: ['admin'],
+    items: [
+      { title: 'Group & Users', url: '/admin-setting/role-list', icon: Users, roles: ['admin'] },
+      { title: 'Profile Card', url: '/profile-card', icon: IdCard },
+    ],
+  },
 ];
 
 // Helper to determine allowed roles for a given page label
@@ -58,10 +63,18 @@ export const getAllowedRoles = (pageLabel: string): UserRole[] => {
 export const getFilteredMenu = (userRole: UserRole | null): MenuItem[] => {
   if (!userRole) return [];
   const allowedPages = ROLE_PAGES[userRole] || [];
-  return menuConfig.filter((item) => allowedPages.includes(item.title));
+  return menuConfig.filter((item) => {
+    if (item.roles && !item.roles.includes(userRole)) {
+      return false;
+    }
+    return allowedPages.includes(item.title);
+  });
 };
 
 // Checks if a menu item URL matches current route
 export const isMenuItemActive = (currentPath: string, itemUrl: string): boolean => {
+  if (itemUrl === '/home' || itemUrl === '/dashboard') {
+    return currentPath === '/home' || currentPath === '/dashboard';
+  }
   return currentPath.startsWith(itemUrl);
 };
