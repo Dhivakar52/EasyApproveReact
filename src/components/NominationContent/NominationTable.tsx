@@ -531,7 +531,7 @@ const NominationTable: React.FC<NominationTableProps> = ({
             (r.status as string) !== "Withdrawn";
 
           return (
-            <div className="flex justify-end">
+            <div className="flex items-center justify-center w-full">
               <ActionMenu
                 item={r}
                 actions={[
@@ -577,7 +577,7 @@ const NominationTable: React.FC<NominationTableProps> = ({
         },
       },
     ],
-    []
+    [hasActiveFilters, activeFilterCount]
   );
 
   // Paginated slice for the table
@@ -631,7 +631,7 @@ const NominationTable: React.FC<NominationTableProps> = ({
               onPrint={() => window.print()}
               onAdd={() => navigate("/self-nominations")}
               addTitle="Create Request"
-              showFilterAction={true}
+              showFilterAction={false}
             />
           </div>
         </div>

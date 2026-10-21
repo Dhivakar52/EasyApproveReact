@@ -66,7 +66,7 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
   onAdd,
   addTitle = "Add New",
   extraAddButtons,
-  showFilterAction = true,
+  showFilterAction = false,
   showExportAction = true,
   showPrintAction = true,
   className = "",
@@ -109,16 +109,15 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
   return (
     <>
       <div className={`flex items-center gap-2 shrink-0 ${className}`}>
-        {/* Dedicated Filter Trigger Button */}
+        {/* Dedicated Filter Trigger Button (rendered if explicitly enabled) */}
         {showFilterAction && (
           <button
             type="button"
             onClick={handleOpenFilter}
-            className={`h-9 px-3 flex items-center gap-1.5 border rounded-lg transition-all cursor-pointer shadow-xs text-xs font-medium ${
-              hasActiveFilters
-                ? "border-blue-500 bg-blue-50/80 text-blue-700 font-semibold"
-                : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900"
-            }`}
+            className={`h-9 px-3 flex items-center gap-1.5 border rounded-lg transition-all cursor-pointer shadow-xs text-xs font-medium ${hasActiveFilters
+              ? "border-blue-500 bg-blue-50/80 text-blue-700 font-semibold"
+              : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900"
+              }`}
             title="Filter Records"
             aria-label="Filter Records"
             aria-expanded={isFilterOpen}
@@ -135,18 +134,29 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
           </button>
         )}
 
-        {/* More Actions (Export, Print, Column options) Trigger Button */}
-        {(showExportAction || showPrintAction) && (
+        {/* Table Actions (Filter, Export, Print) Trigger Button */}
+        {(showExportAction || showPrintAction || onOpenFilter) && (
           <div className="relative shrink-0" ref={actionRef}>
             <button
               type="button"
               onClick={() => setShowActions((prev) => !prev)}
-              className="h-9 w-9 p-0 flex items-center justify-center border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 rounded-lg transition-all cursor-pointer shadow-xs"
-              title="Table Actions"
+              className={`h-9 px-2.5 flex items-center gap-1.5 border rounded-lg transition-all cursor-pointer shadow-xs text-xs font-medium ${hasActiveFilters
+                ? "border-blue-500 bg-blue-50/80 text-blue-700 font-semibold"
+                : "border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
+                }`}
+              title="Table Actions & Filters"
               aria-label="Table Actions"
               aria-expanded={showActions}
             >
               <SlidersHorizontal className="h-4 w-4" />
+              {/* <span>Actions</span> */}
+              {activeFilterCount && activeFilterCount > 0 ? (
+                <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                  {activeFilterCount}
+                </span>
+              ) : hasActiveFilters ? (
+                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+              ) : null}
             </button>
 
             {/* Actions Floating Popup Menu */}
@@ -155,6 +165,30 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
                 className="absolute right-0 mt-2 bg-white border border-slate-200/90 rounded-2xl shadow-xl p-2 flex items-center gap-2 z-50 whitespace-nowrap animate-in fade-in zoom-in-95 duration-100"
                 role="menu"
               >
+                {onOpenFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowActions(false);
+                      handleOpenFilter();
+                    }}
+                    className={`p-2 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium ${hasActiveFilters ? "text-blue-600 bg-blue-50 font-semibold" : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    title="Filter Records"
+                    aria-label="Filter Records"
+                  >
+                    <Filter className="w-4 h-4 text-slate-500" />
+                    {/* <span>Filter</span> */}
+                    {activeFilterCount && activeFilterCount > 0 ? (
+                      <span className="px-1.5 py-0.2 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                        {activeFilterCount}
+                      </span>
+                    ) : hasActiveFilters ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                    ) : null}
+                  </button>
+                )}
+
                 {showExportAction && (
                   <button
                     type="button"
@@ -164,11 +198,12 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
                         onExport();
                       }
                     }}
-                    className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                    className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium"
                     title={exportTitle}
                     aria-label={exportTitle}
                   >
-                    <FileSpreadsheet className="w-4 h-4" strokeWidth={1.75} />
+                    <FileSpreadsheet className="w-4 h-4 text-slate-500" />
+                    {/* <span>Export</span> */}
                   </button>
                 )}
 
@@ -183,11 +218,12 @@ export const TableToolbarActions: React.FC<TableToolbarActionsProps> = ({
                         handleDefaultPrint();
                       }
                     }}
-                    className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                    className="p-2 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium"
                     title="Print"
                     aria-label="Print"
                   >
-                    <Printer className="w-4 h-4" strokeWidth={1.75} />
+                    <Printer className="w-4 h-4 text-slate-500" />
+                    {/* <span>Print</span> */}
                   </button>
                 )}
               </div>

@@ -1000,6 +1000,27 @@ textarea.form-control {
   transition: background-color 0.1s ease;
 }
 
+.tbl th.text-center,
+th.text-center {
+  text-align: center !important;
+}
+
+.tbl td.text-center,
+td.text-center {
+  text-align: center !important;
+}
+
+.tbl th.actions-col,
+.tbl td.actions-col,
+th.actions-col,
+td.actions-col {
+  text-align: center !important;
+  vertical-align: middle !important;
+  width: 96px !important;
+  min-width: 96px !important;
+  max-width: 96px !important;
+}
+
 .tbl tbody tr:hover td {
   background: #F8FAFC;
 }

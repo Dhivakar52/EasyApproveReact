@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useEffect } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
+import { Users, Pencil, UserX, UserCheck } from "lucide-react";
 import { DataTable } from "@/common/Datatable";
 import { TableSearch } from "@/common/TableSearch";
 import { Pagination } from "@/common/Pagination";
 import { TableToolbarActions } from "@/common/TableToolbarActions";
+import { ActionMenu } from "@/common/ActionMenu";
 import { exportToCsv } from "@/lib/utils";
 import { toast } from "@/components/ui/sonner";
-import BackToSetting from "../BackToSetting";
 
 export interface EnterpriseUser {
   id: string;
@@ -476,15 +477,15 @@ export const RoleAccessLevels: React.FC = () => {
         cell: ({ row }) => {
           const isAdmin = row.original.role === "admin";
           return (
-            <div className="min-w-[5rem]">
-              <span
-                className={`badge ${
-                  isAdmin ? "badge-reassigned" : "badge-withdrawn"
-                }`}
-              >
-                {isAdmin ? "Admin" : "User"}
-              </span>
-            </div>
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+                isAdmin
+                  ? "bg-purple-50 text-purple-700 border border-purple-200/60"
+                  : "bg-slate-100 text-slate-700 border border-slate-200/60"
+              }`}
+            >
+              {isAdmin ? "Admin" : "User"}
+            </span>
           );
         },
       },
@@ -494,15 +495,20 @@ export const RoleAccessLevels: React.FC = () => {
         cell: ({ row }) => {
           const isActive = row.original.active;
           return (
-            <div className="min-w-[5.5rem]">
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                isActive
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                  : "bg-rose-50 text-rose-700 border border-rose-200/60"
+              }`}
+            >
               <span
-                className={`badge ${
-                  isActive ? "badge-approved" : "badge-rejected"
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isActive ? "bg-emerald-600" : "bg-rose-600"
                 }`}
-              >
-                {isActive ? "Active" : "Inactive"}
-              </span>
-            </div>
+              />
+              <span>{isActive ? "Active" : "Inactive"}</span>
+            </span>
           );
         },
       },
@@ -512,90 +518,86 @@ export const RoleAccessLevels: React.FC = () => {
         cell: ({ row }) => {
           const u = row.original;
           return (
-            <div className="flex items-center gap-1.5 min-w-[9.5rem] whitespace-nowrap">
-              <button
-                type="button"
-                onClick={() => handleEditUser(u)}
-                className="btn btn-sm btn-outline !text-xs flex items-center gap-1 cursor-pointer"
-                title="Edit user details"
-              >
-                <i className="fa-solid fa-pen text-[10px]"></i> Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => handleToggleUser(u)}
-                className={`btn btn-sm ${
-                  u.active ? "btn-danger-outline" : "btn-outline"
-                } !text-xs cursor-pointer`}
-                title={u.active ? "Deactivate account" : "Activate account"}
-              >
-                {u.active ? "Deactivate" : "Activate"}
-              </button>
+            <div className="flex items-center justify-center w-full">
+              <ActionMenu
+                item={u}
+                actions={[
+                  {
+                    label: "Edit User",
+                    icon: <Pencil className="w-4 h-4 text-blue-600 mr-2" />,
+                    onClick: () => handleEditUser(u),
+                  },
+                  {
+                    label: u.active ? "Deactivate Account" : "Activate Account",
+                    icon: u.active ? (
+                      <UserX className="w-4 h-4 text-rose-600 mr-2" />
+                    ) : (
+                      <UserCheck className="w-4 h-4 text-emerald-600 mr-2" />
+                    ),
+                    variant: u.active ? ("danger" as const) : ("success" as const),
+                    onClick: () => handleToggleUser(u),
+                  },
+                ]}
+              />
             </div>
           );
         },
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [users, sessionEmail]
+    [users, sessionEmail, hasActiveFilters, activeFilterCount]
   );
 
   return (
     <div className="p-3.5 sm:p-5 md:p-6 space-y-5">
-      {/* Show back button only if navigated from admin settings subpages */}
-      {window.location.pathname.includes("/admin-setting/") && (
-        <div className="mb-2">
-          <BackToSetting />
-        </div>
-      )}
-
-      {/* Page Header matching HTML prototype */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-            Groups &amp; Users Directory
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Manage employee roles, approval permissions, and organizational verticals.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={handleAddUser}
-          className="btn btn-primary flex items-center gap-1.5 cursor-pointer text-xs sm:text-sm"
-        >
-          <i className="fa-solid fa-user-plus mr-1"></i> Add Enterprise User
-        </button>
-      </div>
-
-      {/* Main Card */}
+      {/* Main Card with Table and Filter Header matching Approval List reference */}
       <section className="card bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-        {/* Table Toolbar matching Prototype */}
-        <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-          <div className="w-full sm:w-80">
-            <TableSearch
-              value={search}
-              onChange={setSearch}
-              placeholder="Search by name, email, designation..."
-              allowClear
-            />
+        {/* Top Header matching reference screenshot */}
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+          {/* Left: Icon Badge + Title + Subtitle */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100/60 shadow-xs">
+              <Users className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
+                Groups &amp; Users Directory
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Manage employee roles, approval permissions, and organizational verticals
+              </p>
+            </div>
           </div>
 
-          <TableToolbarActions
-            isFilterOpen={isFilterPanelOpen}
-            onOpenFilter={handleOpenFilterPanel}
-            onCloseFilter={() => setIsFilterPanelOpen(false)}
-            onApplyFilters={handleApplyFilters}
-            onClearFilters={handleResetFilters}
-            filterPanelTitle="Filter Users Directory"
-            filterPanelContent={filterPanelContent}
-            hasActiveFilters={hasActiveFilters}
-            activeFilterCount={activeFilterCount}
-            onExport={handleExportUsers}
-            exportTitle="Export Users CSV"
-            onPrint={() => window.print()}
-            showFilterAction={true}
-          />
+          {/* Right: Search, Actions, Add Button */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <div className="w-full sm:w-64 md:w-72">
+              <TableSearch
+                value={search}
+                onChange={setSearch}
+                placeholder="Search by name, email, designation..."
+                allowClear
+              />
+            </div>
+
+            <TableToolbarActions
+              isFilterOpen={isFilterPanelOpen}
+              onOpenFilter={handleOpenFilterPanel}
+              onCloseFilter={() => setIsFilterPanelOpen(false)}
+              onApplyFilters={handleApplyFilters}
+              onClearFilters={handleResetFilters}
+              filterPanelTitle="Filter Users Directory"
+              filterPanelContent={filterPanelContent}
+              hasActiveFilters={hasActiveFilters}
+              activeFilterCount={activeFilterCount}
+              onExport={handleExportUsers}
+              exportTitle="Export Users CSV"
+              onPrint={() => window.print()}
+              onAdd={handleAddUser}
+              addTitle="Add Enterprise User"
+              showFilterAction={false}
+            />
+          </div>
         </div>
 
         {/* Reusable Data Table with contained horizontal scroll and aligned cells */}
@@ -603,11 +605,10 @@ export const RoleAccessLevels: React.FC = () => {
           columns={columns}
           data={paginatedUsers}
           emptyMessage="No users match your search query."
-          containerClassName="rounded-none border-0 shadow-none overflow-x-auto"
-          tableClassName="w-full border-collapse table-auto text-left min-w-[700px]"
+          tableClassName="tbl"
           headerClassName="bg-[#0B132B]"
           headCellClassName="text-xs font-semibold text-white tracking-normal py-3.5 px-4"
-          cellClassName="py-3 px-4 text-xs border-b border-slate-100 align-middle"
+          cellClassName="py-3.5 px-4 text-xs border-b border-slate-100"
           rowClassName="hover:bg-slate-50/80 transition"
         />
 

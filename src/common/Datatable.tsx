@@ -78,12 +78,17 @@ export function DataTable<TData, TValue>({
               {headerGroup.headers.map((header) => {
                 const isSortable = header.column.getCanSort();
                 const sortDirection = header.column.getIsSorted();
+                const isActionsCol =
+                  header.column.id === "actions" || header.column.id === "action";
 
                 return (
                   <th
                     key={header.id}
                     className={cn(
-                      "px-4 py-3.5 text-left text-xs font-semibold text-white tracking-normal select-none whitespace-nowrap",
+                      "px-4 py-3.5 text-xs font-semibold text-white tracking-normal select-none whitespace-nowrap",
+                      isActionsCol
+                        ? "text-center !w-24 !min-w-[96px] !max-w-[96px] actions-col"
+                        : "text-left",
                       headCellClassName
                     )}
                   >
@@ -91,6 +96,7 @@ export function DataTable<TData, TValue>({
                       <div
                         className={cn(
                           "flex items-center gap-1.5",
+                          isActionsCol && "justify-center w-full",
                           isSortable && "cursor-pointer select-none hover:text-white"
                         )}
                         onClick={
@@ -140,14 +146,25 @@ export function DataTable<TData, TValue>({
                   )}
                   onClick={() => onRowClick?.(row.original)}
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <td
-                      key={cell.id}
-                      className={cn("px-4 py-3.5 text-xs text-slate-800 font-medium whitespace-nowrap border-b border-slate-100", cellClassName)}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
+                  {row.getVisibleCells().map((cell) => {
+                    const isActionsCol =
+                      cell.column.id === "actions" || cell.column.id === "action";
+
+                    return (
+                      <td
+                        key={cell.id}
+                        className={cn(
+                          "px-4 py-3 text-xs text-slate-800 font-medium whitespace-nowrap border-b border-slate-100",
+                          isActionsCol
+                            ? "text-center align-middle !w-24 !min-w-[96px] !max-w-[96px] actions-col"
+                            : "align-middle",
+                          cellClassName
+                        )}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })

@@ -5,6 +5,7 @@ import BackToSetting from "../BackToSetting";
 import { DataTable } from "@/common/Datatable";
 import { TableSearch } from "@/common/TableSearch";
 import { Pagination } from "@/common/Pagination";
+import { ActionMenu } from "@/common/ActionMenu";
 import { DeleteConfirmationDialog } from "@/common/DeleteConfirmationDialog";
 import CustomPanel from "@/common/CustomPanel";
 import TableToolbarActions from "@/common/TableToolbarActions";
@@ -81,27 +82,27 @@ const AwardCategories = () => {
       },
       {
         id: "actions",
-        header: () => <div className="text-right">Actions</div>,
+        header: "Actions",
         cell: ({ row }) => {
           const category = row.original;
           return (
-            <div className="flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => handleEdit(category.id)}
-                className="text-blue-600 hover:text-blue-700 cursor-pointer"
-                title="Edit"
-              >
-                <Edit2 className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setDeleteTargetId(category.id)}
-                className="text-red-600 hover:text-red-700 cursor-pointer"
-                title="Delete"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+            <div className="flex items-center justify-center w-full">
+              <ActionMenu
+                item={category}
+                actions={[
+                  {
+                    label: "Edit Category",
+                    icon: <Edit2 className="w-4 h-4 text-blue-600 mr-2" />,
+                    onClick: () => handleEdit(category.id),
+                  },
+                  {
+                    label: "Delete Category",
+                    icon: <Trash2 className="w-4 h-4 text-red-600 mr-2" />,
+                    variant: "danger" as const,
+                    onClick: () => setDeleteTargetId(category.id),
+                  },
+                ]}
+              />
             </div>
           );
         },

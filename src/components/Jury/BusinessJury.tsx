@@ -136,30 +136,32 @@ const BusinessJury = () => {
         cell: ({ row }) => {
           const nominee = row.original;
           return (
-            <ActionMenu
-              item={nominee}
-              actions={[
-                {
-                  label: "View",
-                  icon: <Eye className="w-4 h-4 mr-2" />,
-                  onClick: () => {
-                    setSelectedNominee(nominee);
-                    setIsDetailOpen(true);
+            <div className="flex items-center justify-center w-full">
+              <ActionMenu
+                item={nominee}
+                actions={[
+                  {
+                    label: "View",
+                    icon: <Eye className="w-4 h-4 mr-2" />,
+                    onClick: () => {
+                      setSelectedNominee(nominee);
+                      setIsDetailOpen(true);
+                    },
                   },
-                },
-                {
-                  label: "Edit",
-                  icon: <Pencil className="w-4 h-4 mr-2 text-blue-600" />,
-                  onClick: () => {},
-                },
-                {
-                  label: "Delete",
-                  icon: <Trash2 className="w-4 h-4 mr-2 text-red-600" />,
-                  onClick: () => {},
-                  variant: "danger",
-                },
-              ]}
-            />
+                  {
+                    label: "Edit",
+                    icon: <Pencil className="w-4 h-4 mr-2 text-blue-600" />,
+                    onClick: () => {},
+                  },
+                  {
+                    label: "Delete",
+                    icon: <Trash2 className="w-4 h-4 mr-2 text-red-600" />,
+                    onClick: () => {},
+                    variant: "danger",
+                  },
+                ]}
+              />
+            </div>
           );
         },
       },

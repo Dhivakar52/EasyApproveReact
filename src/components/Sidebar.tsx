@@ -6,7 +6,6 @@ import {
   X,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import whiteLogo from '../assets/images/white-logo.png';
 import type { UserRole } from '../dataTypes/roles';
 import { getFilteredMenu, isMenuItemActive } from '../config/menu.config';
 import { nominationService } from '../services/nominationService';
@@ -115,23 +114,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Header with target logo and toggle button */}
         <div className="h-16 px-4 border-b border-slate-200 flex items-center justify-between shrink-0 bg-white">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-9 h-9 rounded-lg bg-emerald-700 flex items-center justify-center shadow-md shadow-emerald-700/20 shrink-0">
-              <img
-                src={whiteLogo}
-                alt="Easy Approve Logo"
-                className="w-7 h-7 object-contain"
-              />
-            </div>
-            {showExpandedContent && (
-              <div className="min-w-0">
-                <span className="font-bold text-sm tracking-tight text-slate-900 block truncate">
-                  Easy Approve
-                </span>
-                <span className="text-[10px] uppercase tracking-wider text-emerald-700 font-semibold block truncate">
-                  Enterprise Suite
-                </span>
-              </div>
-            )}
+            <img
+              alt="logo"
+              className="w-[106px] h-[40px] object-contain"
+              src="/assets/layout_logo-Bfzm-iBb.png"
+            />
           </div>
 
           {/* Mobile close button */}

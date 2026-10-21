@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
+import { Pencil, Trash2 } from "lucide-react";
 import BackToSetting from "../BackToSetting";
 import { DataTable } from "@/common/Datatable";
 import { TableSearch } from "@/common/TableSearch";
 import { Pagination } from "@/common/Pagination";
 import { TableToolbarActions } from "@/common/TableToolbarActions";
+import { ActionMenu } from "@/common/ActionMenu";
 import { DeleteConfirmationDialog } from "@/common/DeleteConfirmationDialog";
 import { exportToCsv } from "@/lib/utils";
 import { toast } from "@/components/ui/sonner";
@@ -236,29 +238,29 @@ export default function EntitiesDepartments() {
         cell: ({ row }) => {
           const item = row.original;
           return (
-            <div className="flex items-center justify-end gap-1.5 min-w-[8rem] whitespace-nowrap">
-              <button
-                type="button"
-                onClick={() => handleOpenEdit(item)}
-                className="btn btn-sm btn-outline !text-xs flex items-center gap-1 cursor-pointer"
-                title="Edit group"
-              >
-                <i className="fa-solid fa-pen text-[10px]"></i> Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => setDeleteTargetId(item.id)}
-                className="btn btn-sm btn-danger-outline !text-xs flex items-center gap-1 cursor-pointer"
-                title="Delete group"
-              >
-                <i className="fa-solid fa-trash-can text-[10px]"></i> Delete
-              </button>
+            <div className="flex items-center justify-center w-full">
+              <ActionMenu
+                item={item}
+                actions={[
+                  {
+                    label: "Edit Group",
+                    icon: <Pencil className="w-4 h-4 text-blue-600 mr-2" />,
+                    onClick: () => handleOpenEdit(item),
+                  },
+                  {
+                    label: "Delete Group",
+                    icon: <Trash2 className="w-4 h-4 text-red-600 mr-2" />,
+                    variant: "danger" as const,
+                    onClick: () => setDeleteTargetId(item.id),
+                  },
+                ]}
+              />
             </div>
           );
         },
       },
     ],
-    []
+    [hasActiveFilters, activeFilterCount]
   );
 
   return (
@@ -313,7 +315,7 @@ export default function EntitiesDepartments() {
             onExport={handleExport}
             exportTitle="Export Groups CSV"
             onPrint={() => window.print()}
-            showFilterAction={true}
+            showFilterAction={false}
           />
         </div>
 

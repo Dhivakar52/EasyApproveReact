@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Download, Mail, X } from "lucide-react";
 import { DataTable } from "@/common/Datatable";
+import { ActionMenu } from "@/common/ActionMenu";
 import { TableSearch } from "@/common/TableSearch";
 import { Pagination } from "@/common/Pagination";
 import CustomPanel from "@/common/CustomPanel";
@@ -83,31 +84,31 @@ const RecognitionList = () => {
         },
       },
       {
-        id: "download",
+        id: "actions",
         header: "Actions",
         cell: ({ row }) => {
           const recognition = row.original;
-          return recognition.certificateIssued ? (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleDownloadCertificate(recognition.id)}
-                className="px-3 py-1.5 border border-orange-500 text-orange-500 rounded text-xs font-medium hover:bg-orange-50 transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Certificates
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSendEmail(recognition.id)}
-                className="px-3 py-1.5 border border-blue-500 text-blue-500 rounded text-xs font-medium hover:bg-blue-50 transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <Mail className="w-3.5 h-3.5" />
-                Email
-              </button>
+          if (!recognition.certificateIssued) {
+            return <div className="text-center text-gray-400 text-xs">-</div>;
+          }
+          return (
+            <div className="flex items-center justify-center w-full">
+              <ActionMenu
+                item={recognition}
+                actions={[
+                  {
+                    label: "Download Certificate",
+                    icon: <Download className="w-4 h-4 text-orange-600 mr-2" />,
+                    onClick: () => handleDownloadCertificate(recognition.id),
+                  },
+                  {
+                    label: "Send Email",
+                    icon: <Mail className="w-4 h-4 text-blue-600 mr-2" />,
+                    onClick: () => handleSendEmail(recognition.id),
+                  },
+                ]}
+              />
             </div>
-          ) : (
-            <span className="text-gray-400 text-xs">-</span>
           );
         },
       },

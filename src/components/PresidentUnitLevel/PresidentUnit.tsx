@@ -156,7 +156,8 @@ const PresidentUnit = () => {
         cell: ({ row }) => {
           const nominee = row.original;
           return (
-            <ActionMenu
+            <div className="flex items-center justify-center w-full">
+              <ActionMenu
               item={nominee}
               actions={[
                 {
@@ -177,6 +178,7 @@ const PresidentUnit = () => {
                 },
               ]}
             />
+            </div>
           );
         },
       },

@@ -1,13 +1,14 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ColumnDef } from "@tanstack/react-table";
-import { UserCheck } from "lucide-react";
+import { UserCheck, Eye } from "lucide-react";
 import type Nomination from "@/dataTypes/nomination";
 import { nominationService } from "@/services/nominationService";
 import { DataTable } from "@/common/Datatable";
 import { Pagination } from "@/common/Pagination";
 import { TableSearch } from "@/common/TableSearch";
 import { TableToolbarActions } from "@/common/TableToolbarActions";
+import { ActionMenu } from "@/common/ActionMenu";
 import { DatePicker } from "@/components/ui/date-picker";
 import { exportToCsv, formatDateDDMMYYYY, parseDate } from "@/lib/utils";
 import { toast } from "@/components/ui/sonner";
@@ -418,28 +419,29 @@ const ApprovalComponent: React.FC = () => {
         cell: ({ row }) => renderStatusBadge(row.original),
       },
       {
-        id: "action",
-        header: "Action",
+        id: "actions",
+        header: "Actions",
         cell: ({ row }) => {
           const r = row.original;
           return (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => handleOpenDetails(r)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 hover:text-blue-800 border border-blue-200/60 transition shadow-xs cursor-pointer"
-                title="View complete details"
-              >
-                <i className="fa-solid fa-eye text-blue-600 text-[11px]"></i>
-                <span>View</span>
-              </button>
+            <div className="flex items-center justify-center w-full">
+              <ActionMenu
+                item={r}
+                actions={[
+                  {
+                    label: "View Details",
+                    icon: <Eye className="w-4 h-4 text-blue-600 mr-2" />,
+                    onClick: () => handleOpenDetails(r),
+                  },
+                ]}
+              />
             </div>
           );
         },
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [hasActiveFilters, activeFilterCount]
   );
 
   // Paginated slice for the table
@@ -494,7 +496,7 @@ const ApprovalComponent: React.FC = () => {
               onPrint={() => window.print()}
               onAdd={() => navigate("/self-nominations")}
               addTitle="Create Request"
-              showFilterAction={true}
+              showFilterAction={false}
             />
           </div>
         </div>
