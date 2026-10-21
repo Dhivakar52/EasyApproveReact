@@ -4,6 +4,7 @@ import {
   Paperclip,
   X,
   UploadCloud,
+  ArrowLeft,
 } from 'lucide-react';
 import {
   GROUPS,
@@ -24,6 +25,17 @@ export default function SelfNominationComponent() {
 
   const [editReq, setEditReq] = useState<Nomination | null>(null);
   const isEditMode = Boolean(id && editReq);
+  const isModifyMode = Boolean(id);
+
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else if (editReq) {
+      navigate(`/my-nominations/${editReq.number || editReq.id}`);
+    } else {
+      navigate('/my-nominations');
+    }
+  };
 
   // Form State matching HTML Prototype Exactly
   const [group, setGroup] = useState('');
@@ -378,25 +390,61 @@ export default function SelfNominationComponent() {
 
   return (
     <div className="p-3.5 sm:p-6 space-y-6">
+      {/* Back button for Modify Approval Request Screen */}
+      {(isModifyMode || isEditMode) && (
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <button
+            type="button"
+            onClick={handleBack}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition shadow-xs cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4 text-slate-600" />
+            <span>Back</span>
+          </button>
+          {editReq && (
+            <>
+              <span className="text-slate-300">/</span>
+              <span className="font-mono font-semibold text-slate-600">
+                {editReq.number || editReq.id}
+              </span>
+              <span className="text-slate-300">/</span>
+              <span className="font-medium text-slate-800">Modify</span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Title & Description matching HTML Prototype */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-            {isEditMode ? 'Modify Approval Request' : 'Create Approval Request'}
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            {isEditMode ? (
-              <>
-                Editing proposal{' '}
-                <span className="font-mono font-bold text-slate-800">
-                  {editReq?.number || editReq?.id}
-                </span>{' '}
-                (Revision v{editReq?.version || 1}). Resubmission will increment revision state and notify stakeholders.
-              </>
-            ) : (
-              'Submit a formal expenditure, travel, or process approval request into the multi-stage corporate governance chain.'
-            )}
-          </p>
+        <div className="flex items-start gap-3">
+          {/* {(isModifyMode || isEditMode) && (
+            <button
+              type="button"
+              onClick={handleBack}
+              className="mt-0.5 inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition shadow-xs cursor-pointer shrink-0"
+              title="Back"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )} */}
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+              {isEditMode ? 'Modify Approval Request' : 'Create Approval Request'}
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+              {isEditMode ? (
+                <>
+                  Editing proposal{' '}
+                  <span className="font-mono font-bold text-slate-800">
+                    {editReq?.number || editReq?.id}
+                  </span>{' '}
+                  (Revision v{editReq?.version || 1}). Resubmission will increment revision state and notify stakeholders.
+                </>
+              ) : (
+                'Submit a formal expenditure, travel, or process approval request into the multi-stage corporate governance chain.'
+              )}
+            </p>
+          </div>
         </div>
         {isEditMode && editReq && (
           <span className="badge badge-clarify font-bold text-xs py-1 px-3">

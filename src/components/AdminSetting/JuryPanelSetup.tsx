@@ -1,10 +1,11 @@
 import { useState, useMemo } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Menu, X } from "lucide-react";
+import { X, Eye } from "lucide-react";
 import BackToSetting from "../BackToSetting";
 import { DataTable } from "@/common/Datatable";
 import { TableSearch } from "@/common/TableSearch";
 import { Pagination } from "@/common/Pagination";
+import { ActionMenu } from "@/common/ActionMenu";
 import CustomPanel from "@/common/CustomPanel";
 import TableToolbarActions from "@/common/TableToolbarActions";
 import { exportToCsv } from "@/lib/utils";
@@ -104,17 +105,19 @@ const JuryPanelSetup = () => {
       },
       {
         id: "actions",
-        header: () => <div className="text-right">Actions</div>,
+        header: "Actions",
         cell: ({ row }) => (
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => handleViewDetails(row.original.id)}
-              className="text-blue-600 hover:text-blue-700 cursor-pointer p-1 rounded hover:bg-blue-50"
-              title="View details"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
+          <div className="flex items-center justify-center w-full">
+            <ActionMenu
+              item={row.original}
+              actions={[
+                {
+                  label: "View Details",
+                  icon: <Eye className="w-4 h-4 text-blue-600 mr-2" />,
+                  onClick: () => handleViewDetails(row.original.id),
+                },
+              ]}
+            />
           </div>
         ),
       },

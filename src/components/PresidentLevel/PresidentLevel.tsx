@@ -162,27 +162,29 @@ const PresidentLevel = () => {
         cell: ({ row }) => {
           const nominee = row.original;
           return (
-            <ActionMenu
-              item={nominee}
-              actions={[
-                {
-                  label: "View",
-                  icon: <Eye className="w-4 h-4 mr-2" />,
-                  onClick: () => handleView(nominee),
-                },
-                {
-                  label: "Approve",
-                  icon: <Check className="w-4 h-4 mr-2 text-green-600" />,
-                  onClick: () => {},
-                },
-                {
-                  label: "Reject",
-                  icon: <XCircle className="w-4 h-4 mr-2 text-red-600" />,
-                  onClick: () => {},
-                  variant: "danger",
-                },
-              ]}
-            />
+            <div className="flex items-center justify-center w-full">
+              <ActionMenu
+                item={nominee}
+                actions={[
+                  {
+                    label: "View",
+                    icon: <Eye className="w-4 h-4 mr-2" />,
+                    onClick: () => handleView(nominee),
+                  },
+                  {
+                    label: "Approve",
+                    icon: <Check className="w-4 h-4 mr-2 text-green-600" />,
+                    onClick: () => {},
+                  },
+                  {
+                    label: "Reject",
+                    icon: <XCircle className="w-4 h-4 mr-2 text-red-600" />,
+                    onClick: () => {},
+                    variant: "danger",
+                  },
+                ]}
+              />
+            </div>
           );
         },
       },

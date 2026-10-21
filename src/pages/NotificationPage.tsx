@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import NotificationTable from "../components/NotificationComponent/NotificationTable";
 import { nominationService } from "@/services/nominationService";
 import { toast } from "@/components/ui/sonner";
+import { CheckCheck } from "lucide-react";
 
 const NotificationPage = () => {
   const [unreadCount, setUnreadCount] = useState(0);
@@ -25,11 +26,11 @@ const NotificationPage = () => {
   };
 
   return (
-    <div className="space-y-5 p-5">
-      {/* Page Header matching HTML prototype */}
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <div className="p-3.5 sm:p-5 md:p-6 space-y-5">
+      {/* Page Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
             Notifications &amp; Audit Alerts
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
@@ -40,9 +41,10 @@ const NotificationPage = () => {
           type="button"
           onClick={handleMarkAllAsRead}
           disabled={unreadCount === 0}
-          className="btn btn-outline !text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition cursor-pointer shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <i className="fa-solid fa-check-double mr-1"></i> Mark All as Read
+          <CheckCheck className="w-4 h-4 text-blue-600" />
+          <span>Mark All as Read</span>
         </button>
       </div>
 
@@ -51,4 +53,4 @@ const NotificationPage = () => {
   );
 };
 
-export default NotificationPage;
+export default NotificationPage;

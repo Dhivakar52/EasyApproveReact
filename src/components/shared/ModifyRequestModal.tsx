@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, UploadCloud, Paperclip } from 'lucide-react';
+import { X, UploadCloud, Paperclip, ArrowLeft } from 'lucide-react';
 import type Nomination from '@/dataTypes/nomination';
 import type { SupportingDocument } from '@/dataTypes/nomination';
 import { nominationService } from '@/services/nominationService';
@@ -105,17 +105,28 @@ export const ModifyRequestModal: React.FC<ModifyRequestModalProps> = ({
       <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8">
         {/* Header matching prototype */}
         <div className="flex items-center justify-between p-5 border-b border-slate-200 bg-slate-50">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="badge badge-modify text-xs font-semibold">Revision v2</span>
-              <span className="font-mono text-xs text-slate-500 font-semibold">{nomination.number || nomination.id}</span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition shadow-xs cursor-pointer shrink-0"
+              title="Back"
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="badge badge-modify text-xs font-semibold">Revision v2</span>
+                <span className="font-mono text-xs text-slate-500 font-semibold">{nomination.number || nomination.id}</span>
+              </div>
+              <h2 className="text-lg font-bold text-slate-900 mt-0.5">Modify Request & Resubmit</h2>
             </div>
-            <h2 className="text-lg font-bold text-slate-900 mt-1">Modify Request & Resubmit</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition"
+            title="Close"
           >
             <X size={18} />
           </button>
@@ -236,9 +247,9 @@ export const ModifyRequestModal: React.FC<ModifyRequestModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="btn btn-outline !text-xs !py-2"
+              className="btn btn-outline !text-xs !py-2 flex items-center gap-1.5"
             >
-              Cancel
+              <ArrowLeft size={14} /> Back
             </button>
             <button
               type="submit"

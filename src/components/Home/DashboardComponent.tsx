@@ -17,6 +17,7 @@ import { nominationService } from '@/services/nominationService';
 import type Nomination from '@/dataTypes/nomination';
 import type { UserRole } from '@/dataTypes/roles';
 import RequestDrawer from '@/components/shared/RequestDrawer';
+import { ActionMenu } from '@/common/ActionMenu';
 
 export const DashboardComponent: React.FC = () => {
   const navigate = useNavigate();
@@ -230,7 +231,7 @@ export const DashboardComponent: React.FC = () => {
                 <th className="px-6 py-3.5">Requester / Vertical</th>
                 <th className="px-6 py-3.5">Submitted Date</th>
                 <th className="px-6 py-3.5">Status</th>
-                <th className="px-6 py-3.5 text-right">Actions</th>
+                <th className="px-4 py-3.5 text-center !w-24 !min-w-[96px] !max-w-[96px] actions-col">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
@@ -277,15 +278,19 @@ export const DashboardComponent: React.FC = () => {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenDetails(req)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold shadow-2xs transition cursor-pointer"
-                      >
-                        <Eye size={13} className="text-slate-500" />
-                        <span>View</span>
-                      </button>
+                    <td className="px-4 py-3.5 text-center align-middle !w-24 !min-w-[96px] !max-w-[96px] actions-col">
+                      <div className="flex items-center justify-center w-full">
+                        <ActionMenu
+                          item={req}
+                          actions={[
+                            {
+                              label: "View Details",
+                              icon: <Eye className="w-4 h-4 text-blue-600 mr-2" />,
+                              onClick: () => handleOpenDetails(req),
+                            },
+                          ]}
+                        />
+                      </div>
                     </td>
                   </tr>
                 );
