@@ -96,6 +96,18 @@ export interface ReassignmentItem {
   deadline?: string;
 }
 
+export interface RequestComment {
+  id: string;
+  requestId: string;
+  authorName: string;
+  authorEmail: string;
+  authorRole?: string;
+  text: string;
+  createdAt: string | number;
+  updatedAt?: string | number;
+  parentId?: string | null;
+}
+
 export interface Nomination {
   id: string;
   nominee: string;
@@ -128,6 +140,7 @@ export interface Nomination {
   isBudgeted?: string;
   budgeted?: string;
   extraReason?: string;
+  reasonForExtraExpense?: string;
   approverName?: string;
   approverEmail?: string;
   requesterName?: string;
@@ -151,6 +164,7 @@ export interface Nomination {
   nonAction?: boolean;
   baseNumber?: string;
   businessCase?: string;
+  comments?: RequestComment[];
 }
 
 export type { Nomination as default };

@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { nominationService, APPROVERS_BY_GROUP, GROUPS_LIST } from "../services/nominationService";
-import type Nomination from "../dataTypes/nomination";
+import type { Nomination, RequestComment } from "../dataTypes/nomination";
 import { DatePicker } from "@/components/ui/date-picker";
 import { toast } from "sonner";
 import { formatDateDDMMYYYY, parseDate } from "@/lib/utils";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { getStatusConfig } from "@/config/status.config";
 
 // Format currency in INR
 function fmtINR(val: any): string {
@@ -69,17 +71,13 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
 
   const [req, setReq] = useState<Nomination | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [otpVerified, setOtpVerified] = useState<boolean>(false);
 
-  // Active modals
+  // Active modals (OTP modal removed)
   const [modalType, setModalType] = useState<
-    "otp" | "approve" | "reject" | "clarify" | "reassign" | "withdraw" | "remind" | null
+    "approve" | "reject" | "clarify" | "reassign" | "withdraw" | "remind" | null
   >(null);
 
   // Modal Form States
-  const [otpInput, setOtpInput] = useState<string>("");
-  const [otpError, setOtpError] = useState<string>("");
-
   const [approveRemarks, setApproveRemarks] = useState<string>("");
   const [approveError, setApproveError] = useState<string>("");
   const [isSubmittingApprove, setIsSubmittingApprove] = useState<boolean>(false);
@@ -107,6 +105,105 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
   const [withdrawReason, setWithdrawReason] = useState<string>("");
   const [withdrawError, setWithdrawError] = useState<string>("");
 
+  // Current user info
+  const currentUserEmail = (localStorage.getItem("userEmail") || "user@srmtech.com").toLowerCase().trim();
+  const currentUserRole = (localStorage.getItem("userRole") || "user").toLowerCase().trim();
+  const currentUserName =
+    localStorage.getItem("userName") ||
+    (currentUserRole === "admin"
+      ? "Demo Admin"
+      : currentUserRole === "approver"
+        ? "Demo Approver"
+        : "Demo User");
+
+  // Facebook-Style Comment Form States
+  const [commentText, setCommentText] = useState<string>("");
+  const [replyingTo, setReplyingTo] = useState<RequestComment | null>(null);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState<string>("");
+  const [isSubmittingComment, setIsSubmittingComment] = useState<boolean>(false);
+
+  // Check comment permission using nominationService backend rule
+  const commentPermission = useMemo(() => {
+    if (!req) return { allowed: false, isCC: false, reason: "Loading permissions..." };
+    return nominationService.canUserComment(req, currentUserEmail, currentUserRole);
+  }, [req, currentUserEmail, currentUserRole]);
+
+  // Handle post comment
+  const handlePostComment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!req) return;
+    const text = commentText.trim();
+    if (!text) {
+      toast.error("Please enter a comment.");
+      return;
+    }
+
+    setIsSubmittingComment(true);
+    const res = nominationService.addComment(
+      req.id,
+      { text, parentId: replyingTo ? replyingTo.id : null },
+      currentUserEmail,
+      currentUserName,
+      currentUserRole
+    );
+    setIsSubmittingComment(false);
+
+    if (res.success) {
+      toast.success("Comment posted successfully.");
+      setCommentText("");
+      setReplyingTo(null);
+      const updated = nominationService.getNominationById(req.id);
+      if (updated) setReq(updated);
+    } else {
+      toast.error(res.error || "Failed to post comment.");
+    }
+  };
+
+  // Handle save edited comment
+  const handleSaveEditComment = (commentId: string) => {
+    if (!req) return;
+    const text = editCommentText.trim();
+    if (!text) {
+      toast.error("Comment cannot be empty.");
+      return;
+    }
+    const res = nominationService.updateComment(
+      req.id,
+      commentId,
+      text,
+      currentUserEmail,
+      currentUserRole
+    );
+    if (res.success) {
+      toast.success("Comment updated.");
+      setEditingCommentId(null);
+      setEditCommentText("");
+      const updated = nominationService.getNominationById(req.id);
+      if (updated) setReq(updated);
+    } else {
+      toast.error(res.error || "Failed to edit comment.");
+    }
+  };
+
+  // Handle delete comment
+  const handleDeleteComment = (commentId: string) => {
+    if (!req) return;
+    const res = nominationService.deleteComment(
+      req.id,
+      commentId,
+      currentUserEmail,
+      currentUserRole
+    );
+    if (res.success) {
+      toast.success("Comment deleted.");
+      const updated = nominationService.getNominationById(req.id);
+      if (updated) setReq(updated);
+    } else {
+      toast.error(res.error || "Failed to delete comment.");
+    }
+  };
+
   // Nav Source from session storage
   const [navSource, setNavSource] = useState<{ page: string; label: string; url: string }>({
     page: "approvals",
@@ -125,8 +222,6 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
     const item = nominationService.getNominationById(id);
     if (item) {
       setReq(item);
-      const isVerified = nominationService.isActionOtpVerified(item.id, item.version || 1);
-      setOtpVerified(isVerified);
     } else {
       setReq(null);
     }
@@ -198,45 +293,58 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
 
   if (!req) {
     return (
-      <div className="p-8 text-center max-w-lg mx-auto">
-        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
-          <i className="fa-solid fa-triangle-exclamation text-2xl text-amber-500"></i>
+      <div className="max-w-2xl mx-auto my-12 p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center text-2xl">
+          <i className="fa-solid fa-triangle-exclamation"></i>
         </div>
-        <h2 className="text-xl font-bold text-slate-800 mb-2">Request Not Found</h2>
-        <p className="text-slate-600 text-sm mb-6">
-          The requested record could not be found or has been archived.
+        <h2 className="text-xl font-bold text-slate-800">Request Not Found</h2>
+        <p className="text-sm text-slate-500 mt-2">
+          Unable to locate request record <span className="font-mono font-bold">{id}</span>.
         </p>
         <button
+          type="button"
           onClick={() => navigate(navSource.url)}
-          className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-medium hover:bg-slate-700 transition"
+          className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition"
         >
-          <i className="fa-solid fa-arrow-left mr-2"></i> Return to {navSource.label}
+          <i className="fa-solid fa-arrow-left"></i> Back to {navSource.label}
         </button>
       </div>
     );
   }
 
-  const requestedAmount = Number(req.amount) || 0;
-  const budgetedAmount = Number(req.amountBudgeted) || 0;
-  const isOverBudget = req.budgeted !== "No" && budgetedAmount > 0 && requestedAmount > budgetedAmount;
-  const budgetVariance = requestedAmount - budgetedAmount;
+  // Financial calculations
+  const expectedAmount = Number(req.amount) || 0;
+  const budgetAllocated =
+    req.budgeted === "No"
+      ? 0
+      : Number(
+        req.amountBudgeted !== undefined && req.amountBudgeted !== null
+          ? req.amountBudgeted
+          : req.budgetAllocated !== undefined && req.budgetAllocated !== null
+            ? req.budgetAllocated
+            : req.amount
+      ) || 0;
+  const budgetVariance = expectedAmount - budgetAllocated;
+  const isOverBudget = req.budgeted !== "No" && expectedAmount > budgetAllocated;
 
-  // Status checks
+  // Status flags
   const isPending =
     req.status === "Pending" ||
-    req.status === "PENDING APPROVAL" ||
-    req.status === "Re-assigned";
-  const isApproved = req.status === "Approved" || req.status === "APPROVED";
-  const isRejected = req.status === "Rejected" || req.status === "REJECTED";
-  const isClarify =
-    req.status === "Clarification Required" || req.status === "CLARIFICATION REQUIRED";
-  const isUnderMod =
-    req.status === "Under Modification" || req.status === "MODIFICATION REQUIRED";
-  const isWithdrawn = req.status === "Withdrawn" || req.status === "WITHDRAWN";
+    req.status === "In Review" ||
+    req.status === "Under Review" ||
+    req.status === "PENDING APPROVAL";
+  const isApproved = req.status === "Approved";
+  const isRejected = req.status === "Rejected";
+  const isClarify = req.status === "Clarification Required";
+  const isUnderMod = req.status === "Under Modification";
+  const isWithdrawn = req.status === "Withdrawn";
 
-  // Timeline events for clarification
+  // Clarification events from timeline
   const clarifyEvents = (req.timeline || []).filter(
-    (x: any) => x.action === "Clarification Requested" || x.action === "Clarification Needed"
+    (ev: any) =>
+      ev.action === "Clarification Requested" ||
+      ev.action === "Clarification Provided" ||
+      ev.action?.toLowerCase().includes("clarification")
   );
 
   // Copy ID
@@ -246,26 +354,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
     toast.success(`Request ID ${text} copied to clipboard`);
   };
 
-  // OTP handlers
-  const handleOpenOtpModal = () => {
-    setOtpInput("");
-    setOtpError("");
-    setModalType("otp");
-  };
-
-  const handleVerifyOtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    const res = nominationService.verifyApproverOtp(req.id, otpInput, req.version || 1);
-    if (!res.ok) {
-      setOtpError(res.error || "Invalid OTP code.");
-      return;
-    }
-    setOtpVerified(true);
-    setModalType(null);
-    toast.success("Approver identity verified. Action permissions granted.");
-  };
-
-  // Approve Submit
+  // Approve Submit (Direct - No OTP)
   const handleApproveSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!approveRemarks.trim()) {
@@ -306,7 +395,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
     }
   };
 
-  // Clarify Submit
+  // Clarify Submit (Direct - No OTP)
   const handleClarifySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!clarifyText.trim()) {
@@ -414,614 +503,56 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
   };
 
   return (
-    <div className="w-full  p-3.5 sm:p-5 md:p-6 pb-16">
-      {/* 1. Breadcrumb & Return Action */}
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs text-slate-500">
-          <button
-            type="button"
-            onClick={() => navigate(navSource.url)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-sm"
-          >
-            <i className="fa-solid fa-arrow-left"></i> Back to {navSource.label}
-          </button>
-          <span className="text-slate-300">/</span>
-          <span className="font-medium text-slate-700">{navSource.label}</span>
-          <span className="text-slate-300">/</span>
-          <span className="font-mono font-bold text-slate-900">{req.number || req.id}</span>
-        </div>
+    <div className="w-full  p-2.5 sm:p-4 md:p-5">
+      {/* =========================================================================
+          SINGLE COMPACT UNIFIED CARD
+          Combines Header, Overview, Budget, Attachments, Profiles, Timeline & Actions
+          ========================================================================= */}
+      <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm p-4 sm:p-5 space-y-4">
+        {/* 1. Header Toolbar: Breadcrumb, Meta Badges & Direct Action Buttons */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          {/* Left: Navigation & Key Identifiers */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => navigate(navSource.url)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs cursor-pointer"
+            >
+              <i className="fa-solid fa-arrow-left text-[11px]"></i> Back
+            </button>
+            <span className="text-slate-300">/</span>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleCopyId}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-mono font-semibold text-slate-700 hover:bg-slate-50 transition shadow-sm"
-            title="Copy Request ID"
-          >
-            <i className="fa-regular fa-copy"></i> Copy ID
-          </button>
-        </div>
-      </div>
-
-      {/* 2. Header Card with Decision Action Toolbar */}
-      <section className="bg-white rounded-xl border border-slate-200 p-6 mb-6 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-800">
-                {req.number || req.id}
-              </span>
-
-              {/* Status Badge */}
-              <span
-                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${isApproved
-                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    : isRejected
-                      ? "bg-rose-50 text-rose-700 border border-rose-200"
-                      : isClarify
-                        ? "bg-amber-50 text-amber-700 border border-amber-200"
-                        : isUnderMod
-                          ? "bg-blue-50 text-blue-700 border border-blue-200"
-                          : isWithdrawn
-                            ? "bg-slate-100 text-slate-700 border border-slate-200"
-                            : "bg-blue-50 text-blue-700 border border-blue-200"
-                  }`}
+            {/* Request ID Badge with Copy Button */}
+            <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-800 flex items-center gap-1">
+              <span>{req.number || req.id}</span>
+              <button
+                type="button"
+                onClick={handleCopyId}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer ml-0.5"
+                title="Copy Request ID"
               >
-                <i
-                  className={`fa-solid ${isApproved
-                      ? "fa-circle-check"
-                      : isRejected
-                        ? "fa-circle-xmark"
-                        : isClarify
-                          ? "fa-circle-question"
-                          : isUnderMod
-                            ? "fa-pen-to-square"
-                            : isWithdrawn
-                              ? "fa-ban"
-                              : "fa-clock"
-                    } text-[10px]`}
-                ></i>
-                {req.status}
+                <i className="fa-regular fa-copy text-[10px]"></i>
+              </button>
+            </span>
+
+            {/* Status Badge */}
+            <StatusBadge status={req.status} size="sm" />
+
+            {/* <span className="text-xs text-slate-500 font-medium">Revision v{req.version || 1}</span> */}
+
+            {req.deadline && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                <i className="fa-regular fa-calendar text-[10px]"></i> Due: {fmtDate(req.deadline)}
               </span>
-
-              <span className="text-xs text-slate-500 font-medium">Revision v{req.version || 1}</span>
-
-              {req.deadline && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                  <i className="fa-regular fa-calendar text-[10px]"></i> Due: {fmtDate(req.deadline)}
-                </span>
-              )}
-            </div>
-
-            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight break-words">
-              {req.title}
-            </h1>
+            )}
+            {/* <span className="font-bold text-slate-800">{req.type || req.category || "—"}</span> */}
           </div>
 
-          {/* Action Toolbar on Header Card */}
+          {/* Right: Actions Aligned in Header */}
           <div className="flex flex-wrap items-center gap-2">
-            {isApprovalMode ? (
-              otpVerified ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
-                  <i className="fa-solid fa-shield-halved text-[11px]"></i> Approver Identity Verified
-                </span>
-              ) : null
-            ) : (
-              <>
-                {isPending && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setModalType("remind")}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-sm"
-                    >
-                      <i className="fa-regular fa-bell"></i> Remind Approver
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleStartModify}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition shadow-sm"
-                    >
-                      <i className="fa-solid fa-pen-to-square"></i> Modify Request
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setWithdrawReason("");
-                        setWithdrawError("");
-                        setModalType("withdraw");
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold hover:bg-rose-100 transition shadow-sm"
-                    >
-                      <i className="fa-solid fa-ban"></i> Withdraw Request
-                    </button>
-                  </>
-                )}
-
-                {(isUnderMod || isClarify) && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/modify/${req.number || req.id}`)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition shadow-sm"
-                    >
-                      <i className="fa-solid fa-arrow-up-from-bracket"></i> Edit &amp; Resubmit (v
-                      {(req.version || 1) + 1})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setWithdrawReason("");
-                        setWithdrawError("");
-                        setModalType("withdraw");
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold hover:bg-rose-100 transition shadow-sm"
-                    >
-                      <i className="fa-solid fa-ban"></i> Withdraw Request
-                    </button>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Modification Required Banner */}
-        {isUnderMod && (
-          <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 mt-5">
-            <div className="flex items-center gap-2 font-bold text-sm">
-              <i className="fa-solid fa-pen-ruler text-blue-600"></i>
-              <span>Request Reopened for Requester Modification</span>
-            </div>
-            <p className="text-xs text-blue-800 mt-1">
-              Active approver sign-offs are paused. The requester is preparing Revision v
-              {(req.version || 1) + 1}. Outdated revisions cannot be approved.
-            </p>
-          </div>
-        )}
-
-        {/* Clarification Banner */}
-        {isClarify && req.clarification && (
-          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 mt-5">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2 font-bold text-sm">
-                <i className="fa-solid fa-circle-question text-amber-600"></i>
-                <span>Clarification Inquiry from {req.clarification.by}</span>
-              </div>
-              <span className="text-xs opacity-75 font-mono">{fmtDateTime(req.clarification.at)}</span>
-            </div>
-            <div className="text-xs sm:text-sm mt-1.5 text-amber-800 whitespace-pre-wrap leading-relaxed">
-              {req.clarification.text}
-            </div>
-            {req.clarification.comments && (
-              <div className="mt-2 pt-2 border-t border-amber-200/60 text-xs text-amber-800/90 whitespace-pre-wrap leading-relaxed">
-                <span className="font-semibold text-amber-900">Additional Comments:</span> {req.clarification.comments}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Decision Banner (Approved / Rejected) */}
-        {req.decision && (
-          <div
-            className={`p-4 rounded-xl mt-5 ${req.decision.type === "Approved"
-                ? "bg-emerald-50 border border-emerald-200 text-emerald-900"
-                : "bg-rose-50 border border-rose-200 text-rose-900"
-              }`}
-          >
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2 font-bold text-sm">
-                <i
-                  className={`fa-solid ${req.decision.type === "Approved"
-                      ? "fa-circle-check text-emerald-600"
-                      : "fa-circle-xmark text-rose-600"
-                    }`}
-                ></i>
-                <span>
-                  {req.decision.type === "Approved"
-                    ? "Official Executive Approval"
-                    : "Formally Rejected"}{" "}
-                  by {req.decision.by}
-                </span>
-              </div>
-              <span className="text-xs opacity-75 font-mono">{fmtDateTime(req.decision.at)}</span>
-            </div>
-            {req.approvalRef && (
-              <div className="mt-2 font-mono text-xs font-bold px-2.5 py-1 bg-white/70 rounded border border-emerald-200 inline-block">
-                Audit Approval Reference: {req.approvalRef}
-              </div>
-            )}
-            <div className="text-xs sm:text-sm mt-2 whitespace-pre-wrap leading-relaxed">
-              {req.decision.reason}
-            </div>
-            {req.decision.files && req.decision.files.length > 0 && (
-              <div className="mt-3 pt-2 border-t border-rose-200/60">
-                <span className="text-xs font-bold block mb-1.5">Supporting Rejection Documents:</span>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {req.decision.files.map((file: any, idx: number) => (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-2.5 p-2 rounded-lg bg-white border border-rose-200 text-xs"
-                    >
-                      <i className="fa-regular fa-file-pdf text-rose-600 text-base"></i>
-                      <div className="min-w-0 flex-1 truncate font-medium text-slate-800">
-                        {file.name}
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        {(file.size / 1024).toFixed(1)} KB
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Withdrawn Banner */}
-        {isWithdrawn && (
-          <div className="p-4 rounded-xl mt-5 bg-slate-100 border border-slate-200 text-slate-800">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <b className="text-sm flex items-center gap-1.5">
-                <i className="fa-solid fa-ban text-slate-500"></i> Formally Withdrawn by Requester
-              </b>
-              <span className="text-xs text-slate-500 font-mono">{fmtDateTime(req.updatedAt)}</span>
-            </div>
-            <div className="mt-2 text-xs text-slate-700 bg-white p-2.5 rounded border border-slate-200 leading-relaxed">
-              <span className="font-bold text-slate-900">Mandatory Withdrawal Reason:</span> "
-              {req.withdrawReason || "No reason provided."}"
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* 3. Two-Column Responsive Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left 8 Columns */}
-        <div className="lg:col-span-8 space-y-6">
-          {/* Request Overview & Justification */}
-          <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600 flex items-center gap-2">
-                <i className="fa-solid fa-file-lines text-blue-600"></i> Request Overview &amp;
-                Justification
-              </h2>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                {req.type || req.category || "—"}
-              </span>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">
-                  Details of Request
-                </span>
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
-                  {req.details || req.description || req.title}
-                </div>
-              </div>
-
-              <div>
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">
-                  Operational &amp; Commercial Justification
-                </span>
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
-                  {req.reason || req.businessCase || "Operational requirements compliant with departmental guidelines."}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-2 border-t border-slate-100 text-xs">
-                <div>
-                  <span className="text-slate-500 font-medium block">Approval Category</span>
-                  <span className="font-bold text-slate-800">{req.type || req.category || "—"}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 font-medium block">Initial Submission Date</span>
-                  <span className="font-medium text-slate-800">{req.submittedDate || fmtDate(req.createdAt)}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 font-medium block">Current Revision State</span>
-                  <span className="font-medium text-slate-800">
-                    v{req.version || 1} · {fmtDate(req.updatedAt || Date.now())}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* Budget & Financial Analysis */}
-          <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600 flex items-center gap-2">
-                <i className="fa-solid fa-coins text-amber-600"></i> Budget &amp; Financial Analysis
-              </h2>
-              <span
-                className={`text-xs font-mono font-bold px-2 py-0.5 rounded border ${isOverBudget
-                    ? "text-rose-600 bg-rose-50 border-rose-200"
-                    : "text-emerald-600 bg-emerald-50 border-emerald-200"
-                  }`}
-              >
-                {isOverBudget ? "Exceeds Allocated Budget" : "Within Budget Allocation"}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider block mb-1">
-                  Expected Amount (Incl. Tax)
-                </span>
-                <span className="font-mono text-lg font-extrabold text-slate-900">
-                  {fmtINR(req.amount)}
-                </span>
-              </div>
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider block mb-1">
-                  Allocated Budget
-                </span>
-                <span className="font-mono text-lg font-bold text-slate-800">
-                  {req.budgeted === "No" ? "None (₹ 0)" : fmtINR(req.amountBudgeted || req.amount)}
-                </span>
-              </div>
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider block mb-1">
-                  Budget Variance
-                </span>
-                <span
-                  className={`font-mono text-lg font-bold ${budgetVariance > 0 ? "text-rose-600" : "text-emerald-600"
-                    }`}
-                >
-                  {budgetVariance > 0 ? "+" + fmtINR(budgetVariance) : fmtINR(budgetVariance)}
-                </span>
-              </div>
-            </div>
-
-            {isOverBudget && (
-              <div className="mt-5 pt-4 border-t border-slate-100">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-2">
-                  Details of Request / Extra Expense Justification
-                </span>
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
-                  Expense exceeds pre-approved budget line items due to customized specifications and
-                  scope requirements.
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* Supporting Documents & Attachments */}
-          <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600 flex items-center gap-2">
-                <i className="fa-solid fa-paperclip text-blue-600"></i> Supporting Attachments
-              </h2>
-              <span className="text-xs text-slate-500 font-semibold">
-                {req.attachments ? req.attachments.length : 0} of 5 uploaded
-              </span>
-            </div>
-
-            {req.attachments && req.attachments.length > 0 ? (
-              <div className="grid gap-3">
-                {req.attachments.map((file: any, idx: number) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100/70 transition"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-base flex-shrink-0">
-                        <i className="fa-regular fa-file-lines"></i>
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-slate-800 truncate">{file.name}</div>
-                        <div className="text-xs text-slate-400 font-mono">
-                          {(file.size / 1024).toFixed(1)} KB · Document
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => toast.info(`Viewing ${file.name}`)}
-                      className="px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded border border-blue-200"
-                    >
-                      <i className="fa-solid fa-download mr-1"></i> Download
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="p-6 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl">
-                <i className="fa-regular fa-folder-open text-2xl mb-1.5 block"></i>
-                No supporting attachments uploaded for this request.
-              </div>
-            )}
-          </section>
-
-          {/* Clarification Comments Section */}
-          {clarifyEvents.length > 0 && (
-            <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600 flex items-center gap-2">
-                  <i className="fa-solid fa-comments text-amber-500"></i> Clarification Comments
-                </h2>
-                <span className="text-xs text-slate-500 font-semibold">
-                  {clarifyEvents.length} comment{clarifyEvents.length > 1 ? "s" : ""}
-                </span>
-              </div>
-              <div className="space-y-3">
-                {clarifyEvents.map((ev: any, idx: number) => (
-                  <div key={idx} className="p-4 rounded-xl bg-slate-100 border border-slate-200">
-                    <div className="flex items-center justify-between flex-wrap gap-1 mb-2">
-                      <span className="text-sm font-bold text-slate-800">{ev.by}</span>
-                      <span className="text-[11px] text-slate-400 font-mono">{fmtDateTime(ev.at)}</span>
-                    </div>
-                    <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-                      {ev.note}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Delegation & Reassignment History */}
-          {req.reassignments && req.reassignments.length > 0 && (
-            <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600 flex items-center gap-2">
-                  <i className="fa-solid fa-arrow-right-arrow-left text-indigo-600"></i> Delegation &amp;
-                  Reassignment History
-                </h2>
-                <span className="text-xs text-slate-500 font-mono">
-                  {req.reassignCount || 1} of 2 used
-                </span>
-              </div>
-
-              <div className="space-y-3">
-                {req.reassignments.map((r: any, idx: number) => (
-                  <div key={idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                    <div className="flex items-center justify-between text-slate-500 font-mono mb-1.5">
-                      <span>{fmtDateTime(r.at)}</span>
-                      <span className="font-bold text-slate-700">
-                        {r.oldNumber} → {r.newNumber}
-                      </span>
-                    </div>
-                    <div className="text-slate-800 font-medium">
-                      <span className="text-slate-500">Transferred From:</span>{" "}
-                      <b className="text-slate-900">{r.fromName}</b>
-                      <i className="fa-solid fa-arrow-right text-[10px] text-slate-400 mx-2"></i>
-                      <span className="text-slate-500">To:</span>{" "}
-                      <b className="text-slate-900">{r.toName}</b>
-                    </div>
-                    <div className="text-slate-600 mt-1.5 italic">"{r.reason}"</div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-
-        {/* Right 4 Columns */}
-        <div className="lg:col-span-4 space-y-6">
-          {/* Requester Profile Card */}
-          <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2 pb-3 border-b border-slate-100 mb-3">
-              <i className="fa-solid fa-user-tie text-indigo-600"></i> Requester Profile
-            </h2>
-
-            <div className="flex items-start gap-3 mb-4">
-              <div className="w-12 h-12 rounded-xl text-base font-bold bg-indigo-100 text-indigo-700 flex items-center justify-center flex-shrink-0">
-                {getInitials(req.nominee || req.assignedEmployee)}
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-bold text-slate-900">
-                  {req.nominee || req.assignedEmployee || "Employee Requester"}
-                </h3>
-                <p className="text-xs text-slate-600 font-mono break-all mt-0.5">
-                  {req.nomineeEmail || req.originalSubmitter || "employee@srmtech.com"}
-                </p>
-                <span className="inline-block mt-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                  {req.department || "Enterprise"}
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-2.5 text-xs pt-2 border-t border-slate-100">
-              <div>
-                <span className="text-slate-500 font-medium block">CC Notification Email</span>
-                <span className="font-mono text-slate-700">
-                  {req.ccEmail || "admin.governance@srmtech.com"}
-                </span>
-              </div>
-            </div>
-          </section>
-
-          {/* Assigned Approver Card */}
-          <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2 pb-3 border-b border-slate-100 mb-3">
-              <i className="fa-solid fa-user-check text-emerald-600"></i> Assigned Approver
-            </h2>
-
-            <div className="flex items-start gap-3 mb-3">
-              <div className="w-12 h-12 rounded-xl text-base font-bold bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
-                {getInitials(req.approverName || "Approver")}
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-bold text-slate-900">
-                  {req.approverName || "Dr. Priya Nair"}
-                </h3>
-                <p className="text-xs text-slate-600 font-mono break-all mt-0.5">
-                  {req.approverEmail || "priya.nair.hospital@example.com"}
-                </p>
-                <p className="text-xs text-slate-500 mt-1">
-                  Deadline Date:{" "}
-                  <b className="text-slate-800 font-semibold">{fmtDate(req.deadline)}</b>
-                </p>
-              </div>
-            </div>
-          </section>
-
-          {/* Chronological Activity Timeline */}
-          <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2 pb-3 border-b border-slate-100 mb-4">
-              <i className="fa-solid fa-timeline text-indigo-600"></i> Request Activity &amp; Approval
-              History
-            </h2>
-
-            <ol className="relative border-l border-slate-200 ml-3 space-y-5">
-              {req.timeline && req.timeline.length > 0 ? (
-                req.timeline.map((event: any, idx: number) => (
-                  <li key={idx} className="ml-4">
-                    <div className="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full border border-white bg-indigo-600"></div>
-                    <div className="flex items-center justify-between flex-wrap gap-1">
-                      <span className="font-bold text-xs text-slate-900">{event.action}</span>
-                      <span className="text-[11px] text-slate-400 font-mono">
-                        {fmtDateTime(event.at)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-500 mt-0.5">
-                      by <span className="font-medium text-slate-700">{event.by}</span>
-                    </div>
-                    {event.note && (
-                      <div className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg mt-1.5 border border-slate-100 leading-relaxed whitespace-pre-wrap">
-                        {event.note}
-                      </div>
-                    )}
-                  </li>
-                ))
-              ) : (
-                <li className="ml-4 text-xs text-slate-400">No events recorded.</li>
-              )}
-            </ol>
-          </section>
-        </div>
-      </div>
-
-      {/* 4. Bottom Approver Decision Suite (Protected by OTP) - ONLY ON APPROVAL LIST */}
-      {isApprovalMode && isPending && (
-        <section
-          className={`mt-6 rounded-xl border p-6 transition shadow-sm ${otpVerified
-              ? "bg-white border-emerald-300 shadow-md"
-              : "bg-gradient-to-r from-blue-50/70 to-indigo-50/70 border-blue-200"
-            }`}
-        >
-          {otpVerified ? (
-            <div>
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                    <i className="fa-solid fa-clipboard-check text-emerald-600"></i> Approver Decision
-                    Suite
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Approver identity verified via OTP for Revision v{req.version || 1}. Select your
-                    action below:
-                  </p>
-                </div>
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <i className="fa-solid fa-shield-halved text-[10px]"></i> OTP Session Active
-                </span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
+            {isApprovalMode && isPending ? (
+              // Direct Approver Actions (NO OTP REQUIRED)
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -1029,7 +560,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                     setApproveError("");
                     setModalType("approve");
                   }}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition shadow-sm"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition shadow-2xs cursor-pointer"
                 >
                   <i className="fa-solid fa-circle-check"></i> Approve
                 </button>
@@ -1041,7 +572,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                     setClarifyError("");
                     setModalType("clarify");
                   }}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition shadow-sm"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition shadow-2xs cursor-pointer"
                 >
                   <i className="fa-solid fa-circle-question"></i> Seek Clarification
                 </button>
@@ -1057,10 +588,9 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                     setModalType("reassign");
                   }}
                   disabled={(req.reassignCount || 0) >= 2}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition shadow-2xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <i className="fa-solid fa-user-gear"></i> Re-assign to Other Approver (
-                  {req.reassignCount || 0}/2)
+                  <i className="fa-solid fa-user-gear"></i> Re-assign ({req.reassignCount || 0}/2)
                 </button>
                 <button
                   type="button"
@@ -1070,139 +600,928 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                     setRejectError("");
                     setModalType("reject");
                   }}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 transition shadow-sm"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition shadow-2xs cursor-pointer"
                 >
-                  <i className="fa-solid fa-circle-xmark"></i> Reject Request
+                  <i className="fa-solid fa-circle-xmark"></i> Reject
                 </button>
               </div>
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <i className="fa-solid fa-shield-halved text-blue-600"></i> Approver Verification
-                  Required (TAKE ACTION)
-                </h3>
-                <p className="text-xs text-slate-600 mt-1 max-w-2xl">
-                  Full decision permissions (Approve, Seek Clarification, Reject, Reassign) require
-                  two-factor identity verification. Enter the OTP dispatched to your official email (
-                  <b>{req.approverEmail || "priya.nair.hospital@example.com"}</b>) to unlock decision
-                  controls.
-                </p>
+            ) : !isApprovalMode ? (
+              // Requester Actions
+              <div className="flex flex-wrap items-center gap-1.5">
+                {isPending && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setModalType("remind")}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs cursor-pointer"
+                    >
+                      <i className="fa-regular fa-bell"></i> Remind Approver
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStartModify}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition shadow-2xs cursor-pointer"
+                    >
+                      <i className="fa-solid fa-pen-to-square"></i> Modify Request
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWithdrawReason("");
+                        setWithdrawError("");
+                        setModalType("withdraw");
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold hover:bg-rose-100 transition shadow-2xs cursor-pointer"
+                    >
+                      <i className="fa-solid fa-ban"></i> Withdraw Request
+                    </button>
+                  </>
+                )}
+
+                {(isUnderMod || isClarify) && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/modify/${req.number || req.id}`)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition shadow-2xs cursor-pointer"
+                    >
+                      <i className="fa-solid fa-arrow-up-from-bracket"></i> Edit &amp; Resubmit (v
+                      {(req.version || 1) + 1})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWithdrawReason("");
+                        setWithdrawError("");
+                        setModalType("withdraw");
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold hover:bg-rose-100 transition shadow-2xs cursor-pointer"
+                    >
+                      <i className="fa-solid fa-ban"></i> Withdraw Request
+                    </button>
+                  </>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => handleOpenOtpModal()}
-                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition shadow-sm whitespace-nowrap"
-              >
-                <i className="fa-solid fa-key"></i> Verify OTP / TAKE ACTION
-              </button>
+            ) : null}
+          </div>
+        </div>
+
+        {/* 2. Request Title */}
+        <div>
+          <h1 className="text-base sm:text-lg lg:text-xl font-extrabold text-slate-900 tracking-tight break-words">
+            {req.title}
+          </h1>
+        </div>
+
+        {/* 3. Status Banners (compactly embedded inside single card) */}
+        {/* Modification Required Banner */}
+        {isUnderMod && (
+          <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-xs">
+            <div className="flex items-center gap-2 font-bold">
+              <i className="fa-solid fa-pen-ruler text-blue-600"></i>
+              <span>Request Reopened for Requester Modification</span>
             </div>
-          )}
-        </section>
-      )}
+            <p className="text-blue-800 mt-0.5">
+              Active approver sign-offs are paused. The requester is preparing Revision v
+              {(req.version || 1) + 1}. Outdated revisions cannot be approved.
+            </p>
+          </div>
+        )}
 
-      {/* =========================================================================
-          5. MODALS & POPUPS
-          ========================================================================= */}
-
-      {/* 5A. Approver 2FA OTP Modal */}
-      {modalType === "otp" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-100 overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <i className="fa-solid fa-shield-halved text-blue-600"></i> Approver Identity
-                Verification (2FA)
-              </h3>
-              <button
-                onClick={() => setModalType(null)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
-              >
-                &times;
-              </button>
+        {/* Clarification Banner */}
+        {isClarify && req.clarification && (
+          <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-xs">
+            <div className="flex items-center justify-between flex-wrap gap-1 font-bold">
+              <span className="flex items-center gap-1.5">
+                <i className="fa-solid fa-circle-question text-blue-600"></i>
+                <span>Clarification Inquiry from {req.clarification.by}</span>
+              </span>
+              <span className="text-[11px] opacity-75 font-mono">{fmtDateTime(req.clarification.at)}</span>
             </div>
+            <div className="mt-1 text-blue-800 whitespace-pre-wrap leading-relaxed">
+              {req.clarification.text}
+            </div>
+            {req.clarification.comments && (
+              <div className="mt-1.5 pt-1.5 border-t border-blue-200/60 text-blue-800/90 whitespace-pre-wrap leading-relaxed">
+                <span className="font-semibold text-blue-900">Additional Comments:</span>{" "}
+                {req.clarification.comments}
+              </div>
+            )}
+          </div>
+        )}
 
-            <form onSubmit={handleVerifyOtp} className="p-5 space-y-4">
-              <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 flex items-start gap-3">
-                <i className="fa-solid fa-shield-halved text-blue-600 text-lg mt-0.5 flex-shrink-0"></i>
-                <div className="text-xs text-blue-900 leading-relaxed">
-                  A cryptographically generated 4-digit security code has been sent to official email{" "}
-                  <b>{req.approverEmail || "priya.nair.hospital@example.com"}</b> for request{" "}
-                  <b>{req.number || req.id}</b>. Enter the code to authorize your governance session.
+        {/* Decision Banner (Approved / Rejected) */}
+        {req.decision && (
+          <div
+            className={`p-3 rounded-lg text-xs ${req.decision.type === "Approved"
+              ? "bg-emerald-50 border border-emerald-200 text-emerald-900"
+              : "bg-rose-50 border border-rose-200 text-rose-900"
+              }`}
+          >
+            <div className="flex items-center justify-between flex-wrap gap-1 font-bold">
+              <span className="flex items-center gap-1.5">
+                <i
+                  className={`fa-solid ${req.decision.type === "Approved"
+                    ? "fa-circle-check text-emerald-600"
+                    : "fa-circle-xmark text-rose-600"
+                    }`}
+                ></i>
+                <span>
+                  {req.decision.type === "Approved" ? "Official Executive Approval" : "Formally Rejected"}{" "}
+                  by {req.decision.by}
+                </span>
+              </span>
+              <span className="text-[11px] opacity-75 font-mono">{fmtDateTime(req.decision.at)}</span>
+            </div>
+            {req.approvalRef && (
+              <div className="mt-1 font-mono text-[11px] font-bold px-2 py-0.5 bg-white/70 rounded border border-emerald-200 inline-block">
+                Audit Approval Reference: {req.approvalRef}
+              </div>
+            )}
+            <div className="mt-1 whitespace-pre-wrap leading-relaxed">{req.decision.reason}</div>
+            {req.decision.files && req.decision.files.length > 0 && (
+              <div className="mt-2 pt-1.5 border-t border-rose-200/60">
+                <span className="font-bold block mb-1">Supporting Rejection Documents:</span>
+                <div className="grid gap-1.5 sm:grid-cols-2">
+                  {req.decision.files.map((file: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className="flex items-center gap-2 p-1.5 rounded bg-white border border-rose-200 text-xs"
+                    >
+                      <i className="fa-regular fa-file-pdf text-rose-600"></i>
+                      <span className="truncate font-medium text-slate-800 flex-1">{file.name}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {(file.size / 1024).toFixed(1)} KB
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Withdrawn Banner */}
+        {isWithdrawn && (
+          <div className="p-3 rounded-lg bg-slate-700 border border-slate-800 text-white text-xs">
+            <div className="flex items-center justify-between flex-wrap gap-1">
+              <span className="font-bold flex items-center gap-1.5 text-slate-100">
+                <i className="fa-solid fa-ban text-slate-300"></i> Formally Withdrawn by Requester
+              </span>
+              <span className="text-slate-300 font-mono text-[11px]">{fmtDateTime(req.updatedAt)}</span>
+            </div>
+            <div className="mt-1 text-slate-200 bg-slate-800/80 p-2 rounded border border-slate-600/60 leading-relaxed">
+              <span className="font-bold text-white">Mandatory Withdrawal Reason:</span> "
+              {req.withdrawReason || "No reason provided."}"
+            </div>
+          </div>
+        )}
+
+        {/* 4. Compact Two-Column Responsive Layout (No outer cards, unified within main card) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5 pt-1">
+          {/* ===================== LEFT COLUMN (Overview, Budget, Attachments) ===================== */}
+          <div className="lg:col-span-7 space-y-3.5">
+            {/* Request Overview & Justification */}
+            <div className="rounded-lg border border-slate-200/90 p-3.5 bg-slate-50/40 space-y-2.5">
+              {/* <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/70">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <i className="fa-solid fa-file-lines text-blue-600"></i> Request Overview &amp; Justification
+                </h2>
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                  {req.type || req.category || "—"}
+                </span>
+              </div> */}
+
+              {/* Details of Request */}
+              <div>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
+                  Details of Request
+                </span>
+                <div className="p-2.5 rounded-lg bg-white border border-slate-200/80 text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
+                  {req.details || req.description || req.title}
                 </div>
               </div>
 
+              {/* Reason for Requirement */}
               <div>
-                <label
-                  htmlFor="appr-otp-input"
-                  className="block text-center text-slate-700 font-bold text-xs uppercase tracking-wider mb-2"
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
+                  Operational &amp; Commercial Justification
+                </span>
+                <div className="p-2.5 rounded-lg bg-white border border-slate-200/80 text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
+                  {req.reason || req.businessCase || "Operational requirements compliant with departmental guidelines."}
+                </div>
+              </div>
+
+              {/* Metadata strip */}
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200/70 text-[11px]">
+                <div>
+                  <span className="text-slate-500 block">Approval Category</span>
+                  <span className="font-bold text-slate-800">{req.type || req.category || "—"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Initial Submission</span>
+                  <span className="font-medium text-slate-800">{req.submittedDate || fmtDate(req.createdAt)}</span>
+                </div>
+                {/* <div>
+                  <span className="text-slate-500 block">Deadline</span>
+                  <span className="font-medium text-slate-800">{fmtDate(req.deadline)}</span>
+                </div> */}
+                {/* <div>
+                  <span className="text-slate-500 block">Current Revision</span>
+                  <span className="font-medium text-slate-800">
+                    v{req.version || 1} · {fmtDate(req.updatedAt || Date.now())}
+                  </span>
+                </div> */}
+              </div>
+            </div>
+
+            {/* Budget & Financial Analysis */}
+            <div className="rounded-lg border border-slate-200/90 p-3.5 bg-slate-50/40 space-y-2.5">
+              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/70">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <i className="fa-solid fa-coins text-amber-600"></i> Budget &amp; Financial Analysis
+                </h2>
+                <span
+                  className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded border ${isOverBudget
+                    ? "text-rose-600 bg-rose-50 border-rose-200"
+                    : "text-emerald-600 bg-emerald-50 border-emerald-200"
+                    }`}
                 >
-                  Enter 4-Digit Verification OTP
-                </label>
-                <div className="max-w-[180px] mx-auto">
-                  <input
-                    id="appr-otp-input"
-                    type="text"
-                    maxLength={4}
-                    autoFocus
-                    value={otpInput}
-                    onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                    className="w-full text-center font-mono text-2xl font-bold tracking-widest text-slate-900 border border-slate-300 rounded-xl py-2.5 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none"
-                    placeholder="••••"
-                    required
-                  />
+                  {isOverBudget ? "Exceeds Allocated Budget" : "Within Budget Allocation"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mb-0.5">
+                    Expected (Incl. Tax)
+                  </span>
+                  <span className="font-mono text-sm sm:text-base font-extrabold text-slate-900 block truncate">
+                    {fmtINR(req.amount)}
+                  </span>
                 </div>
-                <p className="text-center mt-2 text-xs text-slate-500">
-                  Sandbox Demo: Use code <b className="font-mono text-blue-600">1111</b>.
-                </p>
-                {otpError && (
-                  <p className="text-center text-xs text-rose-600 font-medium mt-1">{otpError}</p>
+                <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mb-0.5">
+                    Allocated Budget
+                  </span>
+                  <span className="font-mono text-sm sm:text-base font-bold text-slate-800 block truncate">
+                    {req.budgeted === "No"
+                      ? "None (₹ 0)"
+                      : fmtINR(req.amountBudgeted !== undefined && req.amountBudgeted !== null ? req.amountBudgeted : (req.budgetAllocated ?? req.amount))}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mb-0.5">
+                    Budget Variance
+                  </span>
+                  <span
+                    className={`font-mono text-sm sm:text-base font-bold block truncate ${budgetVariance > 0 ? "text-rose-600" : "text-emerald-600"
+                      }`}
+                  >
+                    {budgetVariance > 0 ? "+" + fmtINR(budgetVariance) : fmtINR(budgetVariance)}
+                  </span>
+                </div>
+              </div>
+
+              {isOverBudget && (
+                <div className="pt-2 border-t border-slate-200/70 text-xs">
+                  <span className="font-bold text-slate-600 block mb-0.5">Extra Expense Justification:</span>
+                  <div className="p-2 rounded bg-white border border-slate-200/80 text-slate-700 leading-relaxed">
+                    {req.reasonForExtraExpense ||
+                      req.extraReason ||
+                      "Expense exceeds pre-approved budget line items due to customized specifications and scope requirements."}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Supporting Attachments */}
+            <div className="rounded-lg border border-slate-200/90 p-3.5 bg-slate-50/40 space-y-2">
+              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/70">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <i className="fa-solid fa-paperclip text-blue-600"></i> Supporting Attachments
+                </h2>
+                <span className="text-[11px] text-slate-500 font-semibold">
+                  {req.attachments ? req.attachments.length : 0} of 5 uploaded
+                </span>
+              </div>
+
+              {req.attachments && req.attachments.length > 0 ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {req.attachments.map((file: any, idx: number) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 transition text-xs"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-7 h-7 rounded bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                          <i className="fa-regular fa-file-lines"></i>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-slate-800 truncate text-xs">{file.name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {(file.size / 1024).toFixed(1)} KB
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => toast.info(`Viewing ${file.name}`)}
+                        className="px-2 py-0.5 text-[11px] font-medium text-blue-600 hover:bg-blue-50 rounded border border-blue-200 cursor-pointer flex-shrink-0 ml-2"
+                      >
+                        <i className="fa-solid fa-download mr-1"></i> View
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg">
+                  No supporting attachments uploaded for this request.
+                </div>
+              )}
+            </div>
+
+            {/* Clarification Comments (if any) */}
+            {clarifyEvents.length > 0 && (
+              <div className="rounded-lg border border-slate-200/90 p-3.5 bg-slate-50/40 space-y-2">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/70">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <i className="fa-solid fa-comments text-amber-500"></i> Clarification Comments
+                  </h2>
+                  <span className="text-[11px] text-slate-500 font-semibold">
+                    {clarifyEvents.length} comment{clarifyEvents.length > 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {clarifyEvents.map((ev: any, idx: number) => (
+                    <div key={idx} className="p-2.5 rounded-lg bg-white border border-slate-200 text-xs">
+                      <div className="flex items-center justify-between flex-wrap gap-1 mb-1">
+                        <span className="font-bold text-slate-800">{ev.by}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">{fmtDateTime(ev.at)}</span>
+                      </div>
+                      <div className="text-slate-700 whitespace-pre-wrap leading-relaxed">{ev.note}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Delegation & Reassignment History (if any) */}
+            {req.reassignments && req.reassignments.length > 0 && (
+              <div className="rounded-lg border border-slate-200/90 p-3.5 bg-slate-50/40 space-y-2">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/70">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <i className="fa-solid fa-arrow-right-arrow-left text-indigo-600"></i> Delegation &amp; Reassignment
+                  </h2>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    {req.reassignCount || 1} of 2 used
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {req.reassignments.map((r: any, idx: number) => (
+                    <div key={idx} className="p-2.5 rounded-lg bg-white border border-slate-200 text-xs">
+                      <div className="flex items-center justify-between text-slate-500 font-mono text-[10px] mb-1">
+                        <span>{fmtDateTime(r.at)}</span>
+                        <span className="font-bold text-slate-700">
+                          {r.oldNumber} → {r.newNumber}
+                        </span>
+                      </div>
+                      <div className="text-slate-800 font-medium">
+                        <span className="text-slate-500">From:</span> <b>{r.fromName}</b>
+                        <i className="fa-solid fa-arrow-right text-[10px] text-slate-400 mx-1.5"></i>
+                        <span className="text-slate-500">To:</span> <b>{r.toName}</b>
+                      </div>
+                      <div className="text-slate-600 mt-1 italic">"{r.reason}"</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+
+            {/* 6. Facebook-Style Interactive Discussion & Comments Section */}
+            <div className="rounded-xl border border-slate-200/90 p-4 sm:p-5 bg-white shadow-2xs flex flex-col min-h-[320px] max-h-[350px]">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100 shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-bold shadow-xs">
+                    <i className="fa-regular fa-comments"></i>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <span>Discussion &amp; Comments</span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                        {(req.comments || []).length}
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Collaborative thread for stakeholders, approvers, and designated CC recipients
+                    </p>
+                  </div>
+                </div>
+
+                {/* <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-400 text-[11px]">Active Profile:</span>
+                  <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-50 border border-slate-200 text-slate-700 font-medium text-[11px]">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span>{currentUserName}</span>
+                    <span className="text-slate-400 capitalize">({currentUserRole})</span>
+                  </span>
+                </div> */}
+              </div>
+
+              {/* Comments List (Newest at bottom, Facebook social style with internal scrolling) */}
+              <div className="flex-1 min-h-0 overflow-y-auto pr-1.5 space-y-3.5 pt-2 pb-2 scroll-smooth">
+                {(!req.comments || req.comments.length === 0) ? (
+                  <div className="py-3 text-center bg-slate-50/60 rounded-xl border border-dashed border-slate-200">
+                    <i className="fa-regular fa-comment-dots text-slate-300 text-2xl mb-1.5 block"></i>
+                    <p className="text-xs font-semibold text-slate-600">No comments posted yet</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Share clarifications, notes, or contextual questions about this request.
+                    </p>
+                  </div>
+                ) : (
+                  // Filter top-level comments and render replies underneath
+                  req.comments
+                    .filter((c) => !c.parentId)
+                    .map((comment) => {
+                      const replies = (req.comments || []).filter((r) => r.parentId === comment.id);
+                      const isAuthor = comment.authorEmail.toLowerCase() === currentUserEmail;
+                      const canManage = isAuthor || currentUserRole === "admin";
+                      const isEditing = editingCommentId === comment.id;
+
+                      return (
+                        <div key={comment.id} className="space-y-2">
+                          {/* Top-level comment bubble */}
+                          <div className="flex items-start gap-2.5">
+                            {/* Avatar */}
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                              {getInitials(comment.authorName)}
+                            </div>
+
+                            {/* Bubble and actions */}
+                            <div className="flex-1 min-w-0">
+                              <div className="inline-block max-w-full rounded-2xl bg-slate-100/90 hover:bg-slate-100 px-3.5 py-2.5 text-xs text-slate-800 transition">
+                                <div className="flex items-center gap-2 flex-wrap mb-1">
+                                  <span className="font-bold text-slate-900 text-xs hover:underline cursor-pointer">
+                                    {comment.authorName}
+                                  </span>
+                                  {comment.authorRole && (
+                                    <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded uppercase tracking-wider ${comment.authorRole === "admin"
+                                      ? "bg-blue-100 text-blue-800 border border-blue-200"
+                                      : comment.authorRole === "approver"
+                                        ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                        : "bg-slate-200 text-slate-700"
+                                      }`}>
+                                      {comment.authorRole}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    {fmtDateTime(comment.createdAt)}
+                                  </span>
+                                  {comment.updatedAt && (
+                                    <span className="text-[10px] text-slate-400 italic">(edited)</span>
+                                  )}
+                                </div>
+
+                                {isEditing ? (
+                                  <div className="mt-2 space-y-2">
+                                    <textarea
+                                      value={editCommentText}
+                                      onChange={(e) => setEditCommentText(e.target.value)}
+                                      rows={2}
+                                      className="w-full text-xs p-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                      autoFocus
+                                    />
+                                    <div className="flex items-center gap-1.5 justify-end">
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingCommentId(null)}
+                                        className="px-2.5 py-1 rounded text-[11px] text-slate-500 hover:bg-slate-200 cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveEditComment(comment.id)}
+                                        className="px-3 py-1 rounded bg-blue-600 text-white font-semibold text-[11px] hover:bg-blue-700 cursor-pointer shadow-xs"
+                                      >
+                                        Save
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="whitespace-pre-wrap leading-relaxed text-slate-800">
+                                    {comment.text}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Action links under bubble */}
+                              {!isEditing && (
+                                <div className="flex items-center gap-3 text-[11px] font-semibold text-slate-500 mt-1 ml-2">
+                                  {commentPermission.allowed && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReplyingTo(comment);
+                                        setEditingCommentId(null);
+                                      }}
+                                      className="hover:text-blue-600 cursor-pointer"
+                                    >
+                                      Reply
+                                    </button>
+                                  )}
+                                  {canManage && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingCommentId(comment.id);
+                                          setEditCommentText(comment.text);
+                                          setReplyingTo(null);
+                                        }}
+                                        className="hover:text-slate-800 cursor-pointer"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteComment(comment.id)}
+                                        className="hover:text-rose-600 cursor-pointer"
+                                      >
+                                        Delete
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Nested Replies */}
+                              {replies.length > 0 && (
+                                <div className="mt-2.5 ml-4 sm:ml-6 pl-3 border-l-2 border-slate-200 space-y-2">
+                                  {replies.map((reply) => {
+                                    const isReplyAuthor = reply.authorEmail.toLowerCase() === currentUserEmail;
+                                    const canManageReply = isReplyAuthor || currentUserRole === "admin";
+                                    const isEditingReply = editingCommentId === reply.id;
+
+                                    return (
+                                      <div key={reply.id} className="flex items-start gap-2">
+                                        <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-slate-600 to-slate-800 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
+                                          {getInitials(reply.authorName)}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="inline-block max-w-full rounded-2xl bg-slate-100/90 hover:bg-slate-100 px-3 py-2 text-xs text-slate-800 transition">
+                                            <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                                              <span className="font-bold text-slate-900 text-xs">
+                                                {reply.authorName}
+                                              </span>
+                                              <span className="text-[9px] text-slate-400 font-mono">
+                                                {fmtDateTime(reply.createdAt)}
+                                              </span>
+                                            </div>
+                                            {isEditingReply ? (
+                                              <div className="mt-1.5 space-y-1.5">
+                                                <textarea
+                                                  value={editCommentText}
+                                                  onChange={(e) => setEditCommentText(e.target.value)}
+                                                  rows={2}
+                                                  className="w-full text-xs p-1.5 rounded border border-slate-300 bg-white"
+                                                  autoFocus
+                                                />
+                                                <div className="flex items-center gap-1 justify-end">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setEditingCommentId(null)}
+                                                    className="px-2 py-0.5 text-[10px] text-slate-500"
+                                                  >
+                                                    Cancel
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleSaveEditComment(reply.id)}
+                                                    className="px-2.5 py-0.5 rounded bg-blue-600 text-white font-semibold text-[10px]"
+                                                  >
+                                                    Save
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <div className="whitespace-pre-wrap leading-relaxed text-slate-800">
+                                                {reply.text}
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          {/* Reply action links */}
+                                          {!isEditingReply && canManageReply && (
+                                            <div className="flex items-center gap-2.5 text-[10px] font-semibold text-slate-500 mt-0.5 ml-2">
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setEditingCommentId(reply.id);
+                                                  setEditCommentText(reply.text);
+                                                }}
+                                                className="hover:text-slate-800 cursor-pointer"
+                                              >
+                                                Edit
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteComment(reply.id)}
+                                                className="hover:text-rose-600 cursor-pointer"
+                                              >
+                                                Delete
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
                 )}
               </div>
 
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
-                <span>Code expires in 10 minutes (Single use).</span>
-                <button
-                  type="button"
-                  onClick={() => toast.info("Verification code 1111 resent.")}
-                  className="text-blue-600 hover:underline font-medium"
-                >
-                  <i className="fa-solid fa-rotate-right mr-1"></i> Resend Code
-                </button>
+              {/* Replying-to indicator pill */}
+              {replyingTo && (
+                <div className="shrink-0 flex items-center justify-between bg-blue-50 px-3 py-1.5 rounded-t-lg border-t border-x border-blue-200 text-xs text-blue-900">
+                  <span className="flex items-center gap-1.5">
+                    <i className="fa-solid fa-reply text-blue-600 text-xs"></i>
+                    <span>Replying to <b>{replyingTo.authorName}</b>:</span>
+                    <span className="truncate max-w-xs text-blue-700 italic">"{replyingTo.text}"</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setReplyingTo(null)}
+                    className="text-blue-600 hover:text-blue-900 cursor-pointer p-0.5"
+                    title="Cancel reply"
+                  >
+                    <i className="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+              )}
+
+              {/* Disabled notification banner for CC users (or unauthorized) */}
+              {!commentPermission.allowed && (
+                <div className="shrink-0 p-3 rounded-lg bg-amber-50 border border-amber-200/90 text-amber-900 text-xs flex items-start gap-2.5 my-1">
+                  <i className="fa-solid fa-lock text-amber-600 mt-0.5 shrink-0 text-sm"></i>
+                  <div>
+                    <span className="font-bold block">Commenting Locked:</span>
+                    <span className="text-amber-800">{commentPermission.reason}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Comment Input Box (At bottom of comments section) */}
+              <form
+                onSubmit={handlePostComment}
+                className={`shrink-0 flex items-start gap-2.5 pt-2 mt-auto border-t border-slate-100 ${replyingTo ? "bg-blue-50/50 p-2.5 rounded-b-lg border-b border-x border-blue-200 -mt-0" : ""}`}
+              >
+                {/* Logged in user avatar */}
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                  {getInitials(currentUserName)}
+                </div>
+
+                {/* Input field & Post Comment button */}
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="relative">
+                    <textarea
+                      id="request-comment-input"
+                      rows={2}
+                      value={commentText}
+                      onChange={(e) => setCommentText(e.target.value)}
+                      disabled={!commentPermission.allowed || isSubmittingComment}
+                      placeholder={
+                        commentPermission.allowed
+                          ? replyingTo
+                            ? `Write a reply to ${replyingTo.authorName}...`
+                            : "Write a comment or collaborative note..."
+                          : "Commenting is currently disabled for this request."
+                      }
+                      className={`w-full text-xs p-3 rounded-xl border bg-white focus:outline-none focus:ring-2 transition resize-none ${commentPermission.allowed
+                        ? "border-slate-300 focus:border-blue-500 focus:ring-blue-500/20 text-slate-800"
+                        : "border-slate-200 bg-slate-50/70 text-slate-400 cursor-not-allowed"
+                        }`}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                          e.preventDefault();
+                          handlePostComment(e);
+                        }
+                      }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400 hidden sm:inline">
+                      Press <b>Ctrl + Enter</b> to post
+                    </span>
+                    <button
+                      type="submit"
+                      disabled={!commentPermission.allowed || !commentText.trim() || isSubmittingComment}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition shadow-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ml-auto"
+                    >
+                      <i className="fa-solid fa-paper-plane text-xs"></i>
+                      <span>Post Comment</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+
+          </div>
+
+          {/* ===================== RIGHT COLUMN (Profiles & Chronological History) ===================== */}
+          <div className="lg:col-span-5 space-y-3.5">
+            {/* Requester Profile & Assigned Approver side by side on sm, stacked on lg */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
+              {/* Requester Profile */}
+              <div className="rounded-lg border border-slate-200/90 p-3 bg-slate-50/40 space-y-2">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5 pb-1 border-b border-slate-200/70">
+                  <i className="fa-solid fa-user-tie text-indigo-600"></i> Requester Name
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <div className="w-6 h-6 rounded-lg text-xs font-bold bg-indigo-100 text-indigo-700 flex items-center justify-center flex-shrink-0">
+                    {getInitials(req.nominee || req.assignedEmployee)}
+                  </div>
+                  <div className="min-w-0 flex-1 flex justify-between items-center">
+                    <h3 className="text-xs font-bold text-slate-900 truncate">
+                      {req.nominee || req.assignedEmployee || "Employee Requester"} - <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                        {req.department || "Enterprise"}
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-600 font-mono truncate mt-0.5">
+                      {req.nomineeEmail || req.originalSubmitter || "employee@srmtech.com"}
+                    </p>
+
+                  </div>
+                </div>
+                <div className="text-[11px] pt-1.5 border-t border-slate-200/60">
+                  <span className="text-slate-500 block">CC Notification Email</span>
+                  <span className="font-mono text-slate-700 truncate block">
+                    {req.ccEmail || "admin.governance@srmtech.com"}
+                  </span>
+                </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setModalType(null)}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition"
-                >
-                  Verify OTP &amp; Unlock Decisions
-                </button>
+              {/* Assigned Approver */}
+              <div className="rounded-lg border border-slate-200/90 p-3 bg-slate-50/40 space-y-2">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5 pb-1 border-b border-slate-200/70">
+                  <i className="fa-solid fa-user-check text-emerald-600"></i> Assigned Approver
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <div className="w-6 h-6 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
+                    {getInitials(req.approverName || "Approver")}
+                  </div>
+                  <div className="min-w-0 flex-1 flex justify-between items-center">
+                    <h3 className="text-xs font-bold text-slate-900 truncate">
+                      {req.approverName || "Dr. Priya Nair"}
+                    </h3>
+                    <p className="text-[11px] text-slate-600 font-mono truncate mt-0.5">
+                      {req.approverEmail || "priya.nair.hospital@example.com"}
+                    </p>
+                    {/* <p className="text-[11px] text-slate-500 mt-1">
+                      Deadline Date: <b className="text-slate-800 font-semibold">{fmtDate(req.deadline)}</b>
+                    </p> */}
+                  </div>
+                </div>
               </div>
-            </form>
+            </div>
+
+            {/* Request Activity & Approval History (Chronological Timeline) */}
+            <div className="rounded-lg border border-slate-200/90 p-3 bg-slate-50/40 flex flex-col min-h-[320px] max-h-[380px]">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5 pb-1 border-b border-slate-200/70 shrink-0">
+                <i className="fa-solid fa-timeline text-indigo-600"></i> Request Activity &amp; Approval History
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-y-auto pr-1.5 pt-1.5 scroll-smooth">
+                <ol className="relative border-l border-slate-200 ml-2.5 space-y-3 pt-1">
+                  {req.timeline && req.timeline.length > 0 ? (
+                    req.timeline.map((event: any, idx: number) => {
+                      const evConfig = getStatusConfig(event.status || event.action);
+                      return (
+                        <li key={idx} className="ml-3 text-xs">
+                          <div
+                            className={`absolute -left-1.5 mt-1.5 h-2.5 w-2.5 rounded-full border border-white ${evConfig.dotClass}`}
+                          ></div>
+                          <div className="flex items-center justify-between flex-wrap gap-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900 text-xs">{event.action}</span>
+                              {event.status && <StatusBadge status={event.status} size="xs" />}
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">{fmtDateTime(event.at)}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            by <span className="font-medium text-slate-700">{event.by}</span>
+                          </div>
+                          {event.note && (
+                            <div className="text-xs text-slate-600 bg-white p-2 rounded mt-1 border border-slate-200/80 leading-relaxed whitespace-pre-wrap">
+                              {event.note}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })
+                  ) : (
+                    <li className="ml-3 text-xs text-slate-400">No events recorded.</li>
+                  )}
+                </ol>
+              </div>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* 5B. Approve Modal */}
+
+        {/* 5. Direct Decision Bar for Approvers (Bottom of Card - NO OTP REQUIRED) */}
+        {/* {isApprovalMode && isPending && (
+          <div className="pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-50/40 p-3 rounded-lg border border-emerald-100">
+            <div className="flex items-center gap-2">
+              <i className="fa-solid fa-clipboard-check text-emerald-600 text-base"></i>
+              <div>
+                <span className="text-xs font-bold text-slate-900 block">Approver Decision Action</span>
+                <span className="text-[11px] text-slate-500">
+                  Select your decision below to record the sign-off for Revision v{req.version || 1}.
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setApproveRemarks("");
+                  setApproveError("");
+                  setModalType("approve");
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition shadow-2xs cursor-pointer"
+              >
+                <i className="fa-solid fa-circle-check"></i> Approve
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setClarifyText("");
+                  setClarifyComments("");
+                  setClarifyError("");
+                  setModalType("clarify");
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition shadow-2xs cursor-pointer"
+              >
+                <i className="fa-solid fa-circle-question"></i> Seek Clarification
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setReassignGroup("");
+                  setReassignEmail("");
+                  setReassignName("");
+                  setReassignDeadline(minDeadlineISO());
+                  setReassignReason("");
+                  setReassignErrors({});
+                  setModalType("reassign");
+                }}
+                disabled={(req.reassignCount || 0) >= 2}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition shadow-2xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <i className="fa-solid fa-user-gear"></i> Re-assign ({req.reassignCount || 0}/2)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRejectReason("");
+                  setRejectFiles([]);
+                  setRejectError("");
+                  setModalType("reject");
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition shadow-2xs cursor-pointer"
+              >
+                <i className="fa-solid fa-circle-xmark"></i> Reject
+              </button>
+            </div>
+          </div>
+        )} */}
+      </div>
+
+      {/* =========================================================================
+          MODALS & DIALOGS (Approve, Reject, Clarify, Reassign, Withdraw, Remind)
+          Note: OTP Modal has been completely removed.
+          ========================================================================= */}
+
+      {/* Approve Modal */}
       {modalType === "approve" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <i className="fa-solid fa-circle-check text-emerald-600"></i> Approve Request
               </h3>
               <button
                 onClick={() => setModalType(null)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none cursor-pointer"
               >
                 &times;
               </button>
@@ -1225,7 +1544,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   }}
                   rows={4}
                   placeholder="e.g. Reviewed line items and confirmed compliance with departmental allocations."
-                  className="w-full text-sm border border-slate-300 rounded-xl p-3 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 outline-none"
+                  className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 outline-none"
                   required
                 />
                 {approveError && <p className="text-xs text-rose-600 mt-1">{approveError}</p>}
@@ -1259,17 +1578,17 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
         </div>
       )}
 
-      {/* 5C. Reject Modal */}
+      {/* Reject Modal */}
       {modalType === "reject" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <i className="fa-solid fa-circle-xmark text-rose-600"></i> Reject Request
               </h3>
               <button
                 onClick={() => setModalType(null)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none cursor-pointer"
               >
                 &times;
               </button>
@@ -1292,7 +1611,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   }}
                   rows={4}
                   placeholder="Specify why this request cannot be approved at this time..."
-                  className="w-full text-sm border border-slate-300 rounded-xl p-3 focus:border-rose-600 focus:ring-1 focus:ring-rose-600 outline-none"
+                  className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-rose-600 focus:ring-1 focus:ring-rose-600 outline-none"
                   required
                 />
                 {rejectError && <p className="text-xs text-rose-600 mt-1">{rejectError}</p>}
@@ -1312,9 +1631,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   }}
                   className="w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
                 />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Allowed: PDF, DOCX, XLSX, Images up to 10MB each.
-                </p>
+                <p className="text-[11px] text-slate-400 mt-1">Allowed: PDF, DOCX, XLSX, Images up to 10MB each.</p>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
@@ -1345,17 +1662,17 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
         </div>
       )}
 
-      {/* 5D. Seek Clarification Modal */}
+      {/* Seek Clarification Modal */}
       {modalType === "clarify" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <i className="fa-solid fa-circle-question text-amber-500"></i> Seek Clarification
               </h3>
               <button
                 onClick={() => setModalType(null)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none cursor-pointer"
               >
                 &times;
               </button>
@@ -1364,11 +1681,9 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
             <form onSubmit={handleClarifySubmit} className="p-5 space-y-4">
               <p className="text-xs text-slate-500">
                 The proposal will be routed back to <b>{req.nominee || "requester"}</b> with status{" "}
-                <b className="text-amber-700">CLARIFICATION REQUIRED</b>. Approver review pauses until
-                resubmitted.
+                <b className="text-amber-700">CLARIFICATION REQUIRED</b>. Approver review pauses until resubmitted.
               </p>
 
-              {/* Existing field: Comments / Information */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                   Comments / Information that must be added or modified
@@ -1380,11 +1695,10 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   }}
                   rows={3}
                   placeholder="Specify the missing vendor quotes, invoice details, or budget breakdowns..."
-                  className="w-full text-sm border border-slate-300 rounded-xl p-3 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                  className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
                 />
               </div>
 
-              {/* Final Clarification text area styled like existing Comments UI */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                   Clarification Instructions / Inquiry <span className="text-rose-500">*</span>
@@ -1397,7 +1711,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   }}
                   rows={3}
                   placeholder="Enter specific clarification instructions for the requester..."
-                  className="w-full text-sm bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-800 placeholder-slate-400 focus:bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition"
+                  className="w-full text-xs bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-slate-800 placeholder-slate-400 focus:bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition"
                   required
                 />
                 {clarifyError && <p className="text-xs text-rose-600 mt-1">{clarifyError}</p>}
@@ -1431,30 +1745,30 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
         </div>
       )}
 
-      {/* 5E. Re-assign Modal */}
+      {/* Re-assign Modal */}
       {modalType === "reassign" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <i className="fa-solid fa-user-gear text-indigo-600"></i> Re-assign to Other Approver (Max 2 Allowed)
               </h3>
               <button
                 onClick={() => setModalType(null)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none cursor-pointer"
               >
                 &times;
               </button>
             </div>
 
-            <form onSubmit={handleReassignSubmit} className="p-5 space-y-3.5">
+            <form onSubmit={handleReassignSubmit} className="p-5 space-y-3">
               <p className="text-xs text-slate-500">
-                Re-route approval responsibility to another executive. The request reference receives an
-                audit revision suffix (Used: <b>{req.reassignCount || 0} of 2</b> delegations).
+                Re-route approval responsibility to another executive. The request reference receives an audit
+                revision suffix (Used: <b>{req.reassignCount || 0} of 2</b> delegations).
               </p>
 
               {reassignErrors.form && (
-                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700">
                   {reassignErrors.form}
                 </div>
               )}
@@ -1477,9 +1791,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                     </option>
                   ))}
                 </select>
-                {reassignErrors.group && (
-                  <p className="text-xs text-rose-600 mt-1">{reassignErrors.group}</p>
-                )}
+                {reassignErrors.group && <p className="text-xs text-rose-600 mt-1">{reassignErrors.group}</p>}
               </div>
 
               {/* Approver Email */}
@@ -1494,18 +1806,14 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 bg-white outline-none focus:border-indigo-600 disabled:bg-slate-100 disabled:cursor-not-allowed"
                   required
                 >
-                  <option value="">
-                    {reassignGroup ? "Select Approver Email" : "Select Group First"}
-                  </option>
+                  <option value="">{reassignGroup ? "Select Approver Email" : "Select Group First"}</option>
                   {(APPROVERS_BY_GROUP[reassignGroup] || []).map((a) => (
                     <option key={a.email} value={a.email}>
                       {a.email}
                     </option>
                   ))}
                 </select>
-                {reassignErrors.email && (
-                  <p className="text-xs text-rose-600 mt-1">{reassignErrors.email}</p>
-                )}
+                {reassignErrors.email && <p className="text-xs text-rose-600 mt-1">{reassignErrors.email}</p>}
               </div>
 
               {/* Full Name (readonly) */}
@@ -1521,9 +1829,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   placeholder="Auto-populated based on email selection"
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 bg-slate-100 text-slate-700 outline-none"
                 />
-                {reassignErrors.name && (
-                  <p className="text-xs text-rose-600 mt-1">{reassignErrors.name}</p>
-                )}
+                {reassignErrors.name && <p className="text-xs text-rose-600 mt-1">{reassignErrors.name}</p>}
               </div>
 
               {/* Revised Cutoff Date */}
@@ -1554,14 +1860,12 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 <textarea
                   value={reassignReason}
                   onChange={(e) => setReassignReason(e.target.value)}
-                  rows={3}
+                  rows={2.5}
                   placeholder="State reason for delegation (e.g. out of office, budget threshold escalation)..."
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 outline-none focus:border-indigo-600"
                   required
                 />
-                {reassignErrors.reason && (
-                  <p className="text-xs text-rose-600 mt-1">{reassignErrors.reason}</p>
-                )}
+                {reassignErrors.reason && <p className="text-xs text-rose-600 mt-1">{reassignErrors.reason}</p>}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
@@ -1592,17 +1896,17 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
         </div>
       )}
 
-      {/* 5F. Withdraw Modal */}
+      {/* Withdraw Modal */}
       {modalType === "withdraw" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <i className="fa-solid fa-ban text-rose-600"></i> Withdraw Approval Request?
               </h3>
               <button
                 onClick={() => setModalType(null)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none cursor-pointer"
               >
                 &times;
               </button>
@@ -1610,8 +1914,8 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
 
             <form onSubmit={handleWithdrawSubmit} className="p-5 space-y-4">
               <p className="text-xs text-slate-500 leading-relaxed">
-                The request will be withdrawn and removed from active approval queues. All version
-                records and attachments will be preserved in audit archives.
+                The request will be withdrawn and removed from active approval queues. All version records and
+                attachments will be preserved in audit archives.
               </p>
 
               <div>
@@ -1626,7 +1930,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   }}
                   rows={3}
                   placeholder="State the operational reason for withdrawing this request..."
-                  className="w-full text-sm border border-slate-300 rounded-xl p-3 focus:border-rose-600 focus:ring-1 focus:ring-rose-600 outline-none"
+                  className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-rose-600 focus:ring-1 focus:ring-rose-600 outline-none"
                   required
                 />
                 {withdrawError && <p className="text-xs text-rose-600 mt-1">{withdrawError}</p>}
@@ -1636,13 +1940,13 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 <button
                   type="button"
                   onClick={() => setModalType(null)}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition"
+                  className="px-5 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition cursor-pointer"
                 >
                   Confirm Withdrawal
                 </button>
@@ -1652,7 +1956,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
         </div>
       )}
 
-      {/* 5G. Remind Modal */}
+      {/* Remind Modal */}
       {modalType === "remind" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-100 overflow-hidden">
@@ -1662,30 +1966,30 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
               </h3>
               <button
                 onClick={() => setModalType(null)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none cursor-pointer"
               >
                 &times;
               </button>
             </div>
 
             <div className="p-5 space-y-4">
-              <p className="text-sm text-slate-700 leading-relaxed">
-                Dispatch an immediate deadline alert to <b>{req.approverName || "Dr. Priya Nair"}</b> for
-                request <span className="font-mono font-bold">{req.number || req.id}</span>?
+              <p className="text-xs text-slate-700 leading-relaxed">
+                Dispatch an immediate deadline alert to <b>{req.approverName || "Dr. Priya Nair"}</b> for request{" "}
+                <span className="font-mono font-bold">{req.number || req.id}</span>?
               </p>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setModalType(null)}
-                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleRemindSubmit}
-                  className="px-5 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition"
+                  className="px-5 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition cursor-pointer"
                 >
                   Send Notification
                 </button>

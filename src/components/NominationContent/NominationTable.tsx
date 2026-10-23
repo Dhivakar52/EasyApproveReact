@@ -19,16 +19,6 @@ interface NominationTableProps {
   totalCountInTab?: number;
 }
 
-const formatINR = (n?: number | string) => {
-  const num = Number(n) || 0;
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(num);
-};
-
 const formatDate = (s?: string | number) => {
   return formatDateDDMMYYYY(s);
 };
@@ -44,69 +34,8 @@ const getDaysLeft = (deadlineStr?: string) => {
   }
 };
 
-export const renderStatusBadge = (r: Nomination) => {
-  const status = r.status;
-  switch (status) {
-    case "Pending":
-    case "In Review":
-    case "Under Review":
-      return (
-        <span className="badge badge-pending">
-          <i className="fa-regular fa-clock text-[10px]"></i>
-          Pending Approval
-        </span>
-      );
-    case "Approved":
-      return (
-        <span className="badge badge-approved">
-          <i className="fa-solid fa-circle-check text-[10px]"></i>
-          Approved
-        </span>
-      );
-    case "Rejected":
-      return (
-        <span className="badge badge-rejected">
-          <i className="fa-solid fa-circle-xmark text-[10px]"></i>
-          Rejected
-        </span>
-      );
-    case "Clarification Required" as any:
-      return (
-        <span className="badge badge-clarify">
-          <i className="fa-solid fa-circle-question text-[10px]"></i>
-          Clarification Required
-        </span>
-      );
-    case "Under Modification" as any:
-      return (
-        <span className="badge badge-modify">
-          <i className="fa-solid fa-pen-to-square text-[10px]"></i>
-          Modification Required
-        </span>
-      );
-    case "Re-assigned" as any:
-      return (
-        <span className="badge badge-reassigned">
-          <i className="fa-solid fa-user-gear text-[10px]"></i>
-          Pending (Delegated)
-        </span>
-      );
-    case "Withdrawn" as any:
-      return (
-        <span className="badge badge-withdrawn">
-          <i className="fa-solid fa-ban text-[10px]"></i>
-          Withdrawn
-        </span>
-      );
-    default:
-      return (
-        <span className="badge badge-withdrawn">
-          <i className="fa-solid fa-circle text-[10px]"></i>
-          {status}
-        </span>
-      );
-  }
-};
+import { StatusBadge, renderStatusBadge } from "@/components/shared/StatusBadge";
+export { renderStatusBadge };
 
 const NominationTable: React.FC<NominationTableProps> = ({
   nominations,
@@ -154,7 +83,10 @@ const NominationTable: React.FC<NominationTableProps> = ({
       return r.status === "Approved";
     }
     if (filterKey === "rejected") {
-      return r.status === "Rejected" || (r.status as string) === "Withdrawn";
+      return r.status === "Rejected" || (r.status as string) === "REJECTED";
+    }
+    if (filterKey === "withdrawn") {
+      return (r.status as string)?.toLowerCase().includes("withdraw");
     }
     if (filterKey === "reassigned") {
       return (
@@ -273,7 +205,8 @@ const NominationTable: React.FC<NominationTableProps> = ({
           <option value="clarification">Clarifications</option>
           <option value="modify">Under Modification</option>
           <option value="approved">Approved</option>
-          <option value="rejected">Rejected / Withdrawn</option>
+          <option value="rejected">Rejected</option>
+          <option value="withdrawn">Withdrawn</option>
           <option value="reassigned">Delegated</option>
         </select>
       </div>
@@ -327,12 +260,13 @@ const NominationTable: React.FC<NominationTableProps> = ({
 
   const handleExport = () => {
     const exportData = filteredRows.map((r) => ({
-      "Request Number": r.number || r.id,
-      "Request Title": r.title,
+      "ID": r.number || r.id,
+      "Title": r.title,
       "Type": r.type || r.category || "—",
+      "Requester Org": r.department || r.entity || "SRM Tech",
+      "Requested By": r.requesterName || r.nominee || "Demo User",
       "Approver": r.approverName || r.assignedEmployee || "",
-      "Approver Email": r.approverEmail || r.managerEmail || "",
-      "Amount": r.amount || "",
+      "Submission Date": formatDate(r.createdAt || r.submittedDate),
       "Deadline": r.deadline || "",
       "Status": r.status,
     }));
@@ -395,12 +329,13 @@ const NominationTable: React.FC<NominationTableProps> = ({
     }
   };
 
-  // TanStack columns matching exact prototype columns and ordering
+  // TanStack columns matching exact required column order:
+  // ID -> Title -> Type -> Requester Org -> Requested By -> Approver -> Submission Date -> Deadline -> Status -> Actions
   const columns = useMemo<ColumnDef<Nomination>[]>(
     () => [
       {
         accessorKey: "number",
-        header: "Request No.",
+        header: "ID",
         cell: ({ row }) => {
           const r = row.original;
           return (
@@ -417,7 +352,7 @@ const NominationTable: React.FC<NominationTableProps> = ({
       },
       {
         accessorKey: "title",
-        header: "Request Title",
+        header: "Title",
         cell: ({ row }) => (
           <div
             className="font-semibold text-slate-800"
@@ -440,34 +375,44 @@ const NominationTable: React.FC<NominationTableProps> = ({
         },
       },
       {
-        accessorKey: "approverName",
-        header: "Approver",
+        id: "requesterOrg",
+        header: "Requester Org",
         cell: ({ row }) => {
           const r = row.original;
           return (
-            <div>
-              <div className="font-medium text-slate-800">
-                {r.approverName || r.assignedEmployee}
-              </div>
-              <div className="sub text-xs text-slate-500 font-mono">
-                {r.approverEmail || r.managerEmail}
-              </div>
+            <span className="text-xs text-slate-700 font-medium">
+              {r.department || r.entity || "SRM Tech"}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "requesterName",
+        header: "Requested By",
+        cell: ({ row }) => {
+          const r = row.original;
+          return (
+            <div className="font-medium text-slate-800">
+              {r.requesterName || r.nominee || "Demo User"}
             </div>
           );
         },
       },
       {
-        accessorKey: "amount",
-        header: "Expected Amount",
-        cell: ({ row }) => (
-          <span className="mono whitespace-nowrap font-bold text-slate-900">
-            {formatINR(row.original.amount)}
-          </span>
-        ),
+        accessorKey: "approverName",
+        header: "Approver",
+        cell: ({ row }) => {
+          const r = row.original;
+          return (
+            <div className="font-medium text-slate-800">
+              {r.approverName || r.assignedEmployee || "Approver"}
+            </div>
+          );
+        },
       },
       {
         accessorKey: "createdAt",
-        header: "Creation Date",
+        header: "Submission Date",
         cell: ({ row }) => (
           <span className="font-mono text-xs text-slate-600 whitespace-nowrap">
             {formatDate(row.original.createdAt || row.original.submittedDate)}

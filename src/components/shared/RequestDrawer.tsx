@@ -19,6 +19,7 @@ import type { NominationStatus } from '@/dataTypes/nomination';
 import { nominationService } from '@/services/nominationService';
 import type { UserRole } from '@/dataTypes/roles';
 import { toast } from '@/components/ui/sonner';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { ModifyRequestModal } from './ModifyRequestModal';
 
 interface RequestDrawerProps {
@@ -144,30 +145,6 @@ export const RequestDrawer: React.FC<RequestDrawerProps> = ({
     onClose();
   };
 
-  const getStatusBadge = (status: NominationStatus) => {
-    switch (status) {
-      case 'Approved':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <CheckCircle2 size={13} /> Approved
-          </span>
-        );
-      case 'Rejected':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-            <XCircle size={13} /> Rejected
-          </span>
-        );
-      case 'Pending':
-      default:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-            <Clock size={13} /> Pending Review
-          </span>
-        );
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
       {/* Backdrop */}
@@ -184,7 +161,7 @@ export const RequestDrawer: React.FC<RequestDrawerProps> = ({
               <span className="font-mono text-sm font-bold text-slate-900">
                 {nomination.id}
               </span>
-              {getStatusBadge(nomination.status)}
+              <StatusBadge status={nomination.status} />
             </div>
             <button
               type="button"

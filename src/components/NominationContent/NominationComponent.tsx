@@ -49,8 +49,13 @@ export const TABS: TabDef[] = [
   },
   {
     key: "rejected",
-    label: "Rejected / Withdrawn",
-    test: (r) => r.status === "Rejected" || (r.status as string) === "Withdrawn",
+    label: "Rejected",
+    test: (r) => r.status === "Rejected" || (r.status as string) === "REJECTED",
+  },
+  {
+    key: "withdrawn",
+    label: "Withdrawn",
+    test: (r) => (r.status as string)?.toLowerCase().includes("withdraw"),
   },
   {
     key: "reassigned",
@@ -89,8 +94,14 @@ const NominationComponent = () => {
     };
   }, []);
 
-  // Filter requests authored by the currently logged-in user
+  const userRole = (localStorage.getItem("userRole") || "user").toLowerCase();
+
+  // Filter requests authored by the currently logged-in user (Admin views all organization requests)
   const myRequests = useMemo(() => {
+    if (userRole === "admin") {
+      return nominations;
+    }
+
     return nominations.filter((r) => {
       const email = (r.requesterEmail || r.nomineeEmail || "").toLowerCase().trim();
       const origSubmitter = (r.originalSubmitter || "").toLowerCase().trim();
@@ -115,25 +126,24 @@ const NominationComponent = () => {
         );
       }
 
-      // Demo Admin identity alias matching (admin@srmtech.com, admin@gmail.com, "Demo Admin")
+      // Approver identity alias matching (approver@srmtech.com, approver@gmail.com)
       if (
-        currentUserEmail === "admin@srmtech.com" ||
-        currentUserEmail === "admin@gmail.com" ||
-        currentUserEmail.startsWith("admin@")
+        currentUserEmail === "approver@srmtech.com" ||
+        currentUserEmail === "approver@gmail.com" ||
+        currentUserEmail.startsWith("approver@")
       ) {
         return (
-          email === "admin@srmtech.com" ||
-          email === "admin@gmail.com" ||
-          origSubmitter === "admin@srmtech.com" ||
-          origSubmitter === "admin@gmail.com" ||
-          reqName === "demo admin" ||
-          reqName === "admin"
+          email === "approver@srmtech.com" ||
+          email === "approver@gmail.com" ||
+          origSubmitter === "approver@srmtech.com" ||
+          origSubmitter === "approver@gmail.com" ||
+          reqName.includes("approver")
         );
       }
 
       return false;
     });
-  }, [nominations, currentUserEmail]);
+  }, [nominations, currentUserEmail, userRole]);
 
   return (
     <div className="space-y-5">

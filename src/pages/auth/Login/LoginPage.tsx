@@ -28,18 +28,17 @@ export default function LoginPage({ setUserRole }: LoginProps) {
   const authenticateUser = (targetEmail: string, targetRole: UserRole) => {
     localStorage.setItem("userRole", targetRole);
     localStorage.setItem("userEmail", targetEmail);
-    localStorage.setItem("srm_ap_session", JSON.stringify({ email: targetEmail, role: targetRole }));
+    let targetName = "Demo User";
+    if (targetRole === USER_ROLES.ADMIN) {
+      targetName = "Demo Admin";
+    } else if (targetRole === USER_ROLES.APPROVER) {
+      targetName = targetEmail.includes("karthik") ? "Karthik Subramanian" : "Demo Approver";
+    }
+    localStorage.setItem("userName", targetName);
+    localStorage.setItem("srm_ap_session", JSON.stringify({ email: targetEmail, role: targetRole, name: targetName }));
     setUserRole(targetRole);
 
-    switch (targetRole) {
-      case USER_ROLES.ADMIN:
-        navigate("/home");
-        break;
-      case USER_ROLES.USER:
-      default:
-        navigate("/my-nominations");
-        break;
-    }
+    navigate("/home");
   };
 
   const resolveRole = (targetEmail: string, targetPassword?: string): UserRole | null => {
@@ -49,19 +48,25 @@ export default function LoginPage({ setUserRole }: LoginProps) {
     if (cleanEmail === "user@gmail.com" && (!targetPassword || targetPassword === "1" || targetPassword === "123")) {
       return USER_ROLES.USER;
     }
+    if (cleanEmail === "approver@gmail.com" && (!targetPassword || targetPassword === "2" || targetPassword === "123")) {
+      return USER_ROLES.APPROVER;
+    }
     if (cleanEmail === "admin@gmail.com" && (!targetPassword || targetPassword === "6" || targetPassword === "123")) {
       return USER_ROLES.ADMIN;
     }
 
     // Prototype accounts
     if (cleanEmail === "admin@srmtech.com" && (!targetPassword || targetPassword === "123")) return USER_ROLES.ADMIN;
+    if (cleanEmail === "approver@srmtech.com" && (!targetPassword || targetPassword === "123")) return USER_ROLES.APPROVER;
+    if (cleanEmail === "karthik.subramanian@srmtech.com" && (!targetPassword || targetPassword === "123")) return USER_ROLES.APPROVER;
     if (cleanEmail === "user@srmtech.com" && (!targetPassword || targetPassword === "123")) return USER_ROLES.USER;
     if (cleanEmail.includes("admin") && (!targetPassword || targetPassword === "123")) return USER_ROLES.ADMIN;
+    if (cleanEmail.includes("approver") && (!targetPassword || targetPassword === "123")) return USER_ROLES.APPROVER;
     if ((cleanEmail.endsWith("@srmtech.com") || cleanEmail.endsWith("@srmtechnologies.com")) && (!targetPassword || targetPassword === "123")) {
       return USER_ROLES.USER;
     }
 
-    return null;
+    return USER_ROLES.USER;
   };
 
   const handleCredentialsSubmit = (e: React.FormEvent) => {
@@ -323,7 +328,7 @@ export default function LoginPage({ setUserRole }: LoginProps) {
                   </span>
                   <span className="text-[11px] font-mono text-slate-400">pwd: 123</span>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-1.5">
                   <button
                     type="button"
                     onClick={() => fillDemoAccount("user@srmtech.com", "123")}
@@ -331,6 +336,14 @@ export default function LoginPage({ setUserRole }: LoginProps) {
                   >
                     <span className="text-emerald-700 font-semibold block truncate">User</span>
                     <span className="text-[10px] text-slate-500 block truncate">user@srmtech.com</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fillDemoAccount("approver@srmtech.com", "123")}
+                    className="p-2 border border-slate-200 bg-slate-50/70 hover:bg-slate-100/70 rounded-lg text-left text-xs font-medium transition cursor-pointer text-slate-700 truncate"
+                  >
+                    <span className="text-amber-700 font-semibold block truncate">Approver</span>
+                    <span className="text-[10px] text-slate-500 block truncate">approver@...</span>
                   </button>
                   <button
                     type="button"

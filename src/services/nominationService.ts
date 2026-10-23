@@ -1,5 +1,5 @@
 import type Nomination from "@/dataTypes/nomination";
-import type { NominationStatus, NominationType, ReassignmentRecord, ClarificationRecord } from "@/dataTypes/nomination";
+import type { NominationStatus, NominationType, ReassignmentRecord, ClarificationRecord, RequestComment } from "@/dataTypes/nomination";
 import { MOCK_NOMINATIONS } from "@/mocks/nominations.mock";
 import { MOCK_NOTIFICATIONS, type SystemNotification } from "@/mocks/notifications.mock";
 
@@ -36,21 +36,31 @@ const buildSeedNominations = (): Nomination[] => {
     let appName = "Karthik Subramanian";
     let appEmail = "karthik.subramanian@srmtech.com";
 
-    if (index === 0 || index === 2 || index === 5 || index === 8) {
+    if (index === 0) {
       reqName = "Demo User";
       reqEmail = "user@srmtech.com";
-      appName = "Demo Admin";
-      appEmail = "admin@srmtech.com";
-    } else if (index === 1 || index === 4 || index === 7) {
+      appName = "Demo Approver";
+      appEmail = "approver@srmtech.com";
+    } else if (index === 1) {
+      reqName = "Demo User";
+      reqEmail = "user@srmtech.com";
+      appName = "Demo Approver";
+      appEmail = "approver@srmtech.com";
+    } else if (index === 2) {
       reqName = "Priya Nair";
       reqEmail = "priya.nair@srmtech.com";
-      appName = "Demo User";
-      appEmail = "user@srmtech.com";
+      appName = "Demo Approver";
+      appEmail = "approver@srmtech.com";
     } else if (index === 3 || index === 6) {
       reqName = "Vikram Seth";
       reqEmail = "vikram.seth@srmtech.com";
       appName = "Demo Admin";
       appEmail = "admin@srmtech.com";
+    } else if (index === 4 || index === 5 || index === 8) {
+      reqName = "Demo User";
+      reqEmail = "user@srmtech.com";
+      appName = "Demo Approver";
+      appEmail = "approver@srmtech.com";
     }
 
     return {
@@ -79,7 +89,28 @@ const buildSeedNominations = (): Nomination[] => {
       mobileNumber: `+91 9845${index} 7612${index % 10}`,
       nomineeEmail: reqEmail,
       managerEmail: appEmail,
-      referrals: ["sathishkumar312@srm.com", "kumaran@srm.com", "manikandan@srm.com"],
+      referrals: ["ccuser@srmtech.com", "sathishkumar312@srm.com", "kumaran@srm.com"],
+      ccEmail: "ccuser@srmtech.com, sathishkumar312@srm.com",
+      comments: index === 1 ? [
+        {
+          id: `cmt-${index}-1`,
+          requestId: item.id,
+          authorName: "Demo User",
+          authorEmail: "user@srmtech.com",
+          authorRole: "user",
+          text: "Submitted quotation details and expense breakdown for executive review.",
+          createdAt: Date.now() - 3600000 * 24,
+        },
+        {
+          id: `cmt-${index}-2`,
+          requestId: item.id,
+          authorName: "Demo Approver",
+          authorEmail: "approver@srmtech.com",
+          authorRole: "approver",
+          text: "Reviewed the initial submission. Please verify tax deductions.",
+          createdAt: Date.now() - 3600000 * 12,
+        }
+      ] : [],
       supportingDocuments: [
         {
           id: `doc-${index}-1`,
@@ -147,9 +178,12 @@ const normalizeNomination = (item: Nomination, index: number = 0): Nomination =>
     updatedAt: item.updatedAt || reqCreatedAt,
     details: item.details || item.description || "Specifications, quantities, and operational justification for departmental requirements.",
     reason: item.reason || item.travelDetails?.justification || item.projectDetails?.impact || "Operational & commercial justification for enterprise workflow.",
-    extraReason: item.extraReason || (reqAmount > reqBudget ? "Expense exceeds pre-approved budget line items." : ""),
+    extraReason: item.extraReason || item.reasonForExtraExpense || (reqAmount > reqBudget ? "Expense exceeds pre-approved budget line items." : ""),
+    reasonForExtraExpense: item.reasonForExtraExpense || item.extraReason || (reqAmount > reqBudget ? "Expense exceeds pre-approved budget line items." : ""),
     vertical: item.vertical || item.department || "Digital & Enterprise IT",
-    ccEmail: item.ccEmail || (item.referrals && item.referrals[0]) || "management.audit@srmtech.com",
+    ccEmail: item.ccEmail || (item.referrals && item.referrals.join(', ')) || "ccuser@srmtech.com, sathishkumar312@srm.com",
+    referrals: item.referrals || ["ccuser@srmtech.com", "sathishkumar312@srm.com"],
+    comments: item.comments || [],
     attachments: item.attachments || item.supportingDocuments || [],
     reassignCount: item.reassignCount || (item.reassignments ? item.reassignments.length : 0),
     reassignments: item.reassignments || [],
@@ -210,6 +244,17 @@ export const nominationService = {
       now.getDate()
     ).padStart(2, "0")}/${now.getFullYear()}`;
 
+    const expAmt = Number(payload.amount) || 0;
+    const isBudgetedStr = (payload.budgeted || payload.isBudgeted || "Yes").toLowerCase();
+    const isBudgetType = isBudgetedStr === "yes" || isBudgetedStr === "partially";
+    const budgetAmt = isBudgetType ? (Number(payload.amountBudgeted ?? payload.budgetAllocated) || 0) : 0;
+    const extraExpReason = (payload.reasonForExtraExpense || payload.extraReason || "").trim();
+
+    // Backend / API validation
+    if (isBudgetType && budgetAmt < expAmt && !extraExpReason) {
+      throw new Error("Reason for Extra Expense is required when Amount Budgeted is less than Expected Amount.");
+    }
+
     const newNomination: Nomination = {
       ...payload,
       id: generatedId,
@@ -229,9 +274,13 @@ export const nominationService = {
       ccEmail: payload.ccEmail || (payload.referrals && payload.referrals.join(', ')) || '',
       details: payload.details || payload.description || payload.title,
       reason: payload.reason || "Operational requirements compliant with departmental guidelines.",
-      amountBudgeted: payload.amountBudgeted || payload.budgetAllocated || payload.amount || 0,
+      amount: expAmt,
+      amountBudgeted: budgetAmt,
+      budgetAllocated: budgetAmt,
       budgeted: payload.budgeted || payload.isBudgeted || "Yes",
-      extraReason: payload.extraReason || "",
+      isBudgeted: payload.budgeted || payload.isBudgeted || "Yes",
+      extraReason: extraExpReason,
+      reasonForExtraExpense: extraExpReason,
       reassignmentHistory: [],
       reassignments: [],
       reassignCount: 0,
@@ -881,6 +930,25 @@ export const nominationService = {
     const newVersion = (current.version || 1) + 1;
     const nowTs = Date.now();
 
+    const expAmt = changes.amount !== undefined ? (Number(changes.amount) || 0) : (Number(current.amount) || 0);
+    const budgetStatus = (changes.budgeted || changes.isBudgeted || current.budgeted || current.isBudgeted || "Yes").toLowerCase();
+    const isBudgetType = budgetStatus === "yes" || budgetStatus === "partially";
+    const budgetAmt = isBudgetType ? (Number(changes.amountBudgeted ?? changes.budgetAllocated ?? current.amountBudgeted ?? current.budgetAllocated) || 0) : 0;
+    const extraExpReason = (
+      changes.reasonForExtraExpense !== undefined
+        ? changes.reasonForExtraExpense
+        : changes.extraReason !== undefined
+          ? changes.extraReason
+          : (current.reasonForExtraExpense || current.extraReason || "")
+    ).trim();
+
+    if (isBudgetType && budgetAmt < expAmt && !extraExpReason) {
+      return {
+        success: false,
+        error: "Reason for Extra Expense is required when Amount Budgeted is less than Expected Amount.",
+      };
+    }
+
     const updatedTimeline = [
       ...(current.timeline || []),
       {
@@ -903,6 +971,11 @@ export const nominationService = {
     const updated: Nomination = {
       ...current,
       ...changes,
+      amount: expAmt,
+      amountBudgeted: budgetAmt,
+      budgetAllocated: budgetAmt,
+      extraReason: extraExpReason,
+      reasonForExtraExpense: extraExpReason,
       version: newVersion,
       status: "Pending",
       attachments: [...(current.attachments || []), ...mappedAddFiles],
@@ -947,6 +1020,243 @@ export const nominationService = {
       time: "Just now",
       type: "Nomination Approval Required",
     });
+    return { success: true };
+  },
+
+  // ==========================================
+  // Comments API & Persistence Layer
+  // ==========================================
+  getComments(nominationId: string): RequestComment[] {
+    const item = this.getNominationById(nominationId);
+    if (!item) return [];
+    return item.comments || [];
+  },
+
+  canUserComment(
+    nomination: Nomination,
+    userEmail: string,
+    userRole: string
+  ): { allowed: boolean; isCC: boolean; reason?: string } {
+    const cleanEmail = (userEmail || "").trim().toLowerCase();
+    const cleanRole = (userRole || "user").trim().toLowerCase();
+
+    // 1. Admin always has full commenting permissions
+    if (cleanRole === "admin") {
+      return { allowed: true, isCC: false };
+    }
+
+    // 2. Author / Requester check
+    const reqEmail = (nomination.requesterEmail || nomination.nomineeEmail || "").trim().toLowerCase();
+    const isRequester =
+      reqEmail === cleanEmail ||
+      (cleanEmail.startsWith("user@") && (reqEmail === "user@srmtech.com" || nomination.requesterName?.toLowerCase().includes("user")));
+    if (isRequester) {
+      return { allowed: true, isCC: false };
+    }
+
+    // 3. Assigned Approver check
+    const appEmail = (nomination.approverEmail || nomination.managerEmail || "").trim().toLowerCase();
+    const isApprover =
+      appEmail === cleanEmail ||
+      (cleanEmail.startsWith("approver@") && (appEmail === "approver@srmtech.com" || nomination.approverName?.toLowerCase().includes("approver")));
+    if (isApprover) {
+      return { allowed: true, isCC: false };
+    }
+
+    // 4. CC Recipients check
+    const referrals = nomination.referrals || [];
+    const ccString = nomination.ccEmail || "";
+    const ccParts = ccString.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const ccList = Array.from(new Set([...referrals.map((s) => s.trim().toLowerCase()), ...ccParts]));
+
+    const isCC = ccList.includes(cleanEmail) || cleanEmail.includes("ccuser");
+
+    if (isCC) {
+      // CC commenting activation condition:
+      // CC users can start commenting only after the assigned approver performs the first approval action or submits a clarification action.
+      const hasApproverActed =
+        nomination.status !== "Pending" ||
+        Boolean(nomination.clarification) ||
+        Boolean(nomination.clarifications && nomination.clarifications.length > 0) ||
+        Boolean(
+          nomination.timeline &&
+            nomination.timeline.some((ev) => {
+              const act = (ev.action || "").toLowerCase();
+              return (
+                act.includes("clarif") ||
+                act.includes("approv") ||
+                act.includes("reject") ||
+                act.includes("reassign") ||
+                act.includes("delegat")
+              );
+            })
+        );
+
+      if (!hasApproverActed) {
+        return {
+          allowed: false,
+          isCC: true,
+          reason: "Commenting for CC recipients will be unlocked once the assigned approver performs the first review action (such as an approval decision or clarification request).",
+        };
+      }
+
+      return { allowed: true, isCC: true };
+    }
+
+    // Unauthorized user
+    return {
+      allowed: false,
+      isCC: false,
+      reason: "You do not have authorization to post comments on this request.",
+    };
+  },
+
+  addComment(
+    nominationId: string,
+    payload: { text: string; parentId?: string | null },
+    userEmail: string,
+    userName: string,
+    userRole: string
+  ): { success: boolean; comment?: RequestComment; error?: string } {
+    const list = this.getNominations();
+    const index = list.findIndex(
+      (item) => item.id.toLowerCase() === nominationId.toLowerCase() || (item.number && item.number.toLowerCase() === nominationId.toLowerCase())
+    );
+    if (index === -1) return { success: false, error: "Request not found." };
+
+    const current = list[index];
+
+    // Backend validation of permissions
+    const perm = this.canUserComment(current, userEmail, userRole);
+    if (!perm.allowed) {
+      return { success: false, error: perm.reason || "Unauthorized to submit comments." };
+    }
+
+    const cleanText = (payload.text || "").trim();
+    if (!cleanText) {
+      return { success: false, error: "Comment text cannot be empty." };
+    }
+
+    const newComment: RequestComment = {
+      id: `cmt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      requestId: current.number || current.id,
+      authorName: userName || "User",
+      authorEmail: userEmail || "user@srmtech.com",
+      authorRole: userRole,
+      text: cleanText,
+      createdAt: Date.now(),
+      parentId: payload.parentId || null,
+    };
+
+    const updatedComments = [...(current.comments || []), newComment];
+    const updatedNomination: Nomination = {
+      ...current,
+      comments: updatedComments,
+    };
+
+    list[index] = updatedNomination;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    } catch (e) {
+      console.error(e);
+    }
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("easyapprove_nominations_updated"));
+    }
+
+    return { success: true, comment: newComment };
+  },
+
+  updateComment(
+    nominationId: string,
+    commentId: string,
+    text: string,
+    userEmail: string,
+    userRole: string
+  ): { success: boolean; error?: string } {
+    const list = this.getNominations();
+    const index = list.findIndex(
+      (item) => item.id.toLowerCase() === nominationId.toLowerCase() || (item.number && item.number.toLowerCase() === nominationId.toLowerCase())
+    );
+    if (index === -1) return { success: false, error: "Request not found." };
+
+    const current = list[index];
+    const comments = [...(current.comments || [])];
+    const cmtIndex = comments.findIndex((c) => c.id === commentId);
+    if (cmtIndex === -1) return { success: false, error: "Comment not found." };
+
+    const targetComment = comments[cmtIndex];
+    const cleanEmail = (userEmail || "").trim().toLowerCase();
+    const cleanRole = (userRole || "").trim().toLowerCase();
+
+    // Author or admin can edit
+    if (cleanRole !== "admin" && targetComment.authorEmail.toLowerCase() !== cleanEmail) {
+      return { success: false, error: "You are not authorized to edit this comment." };
+    }
+
+    const cleanText = text.trim();
+    if (!cleanText) return { success: false, error: "Comment cannot be empty." };
+
+    comments[cmtIndex] = {
+      ...targetComment,
+      text: cleanText,
+      updatedAt: Date.now(),
+    };
+
+    list[index] = { ...current, comments };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    } catch (e) {
+      console.error(e);
+    }
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("easyapprove_nominations_updated"));
+    }
+
+    return { success: true };
+  },
+
+  deleteComment(
+    nominationId: string,
+    commentId: string,
+    userEmail: string,
+    userRole: string
+  ): { success: boolean; error?: string } {
+    const list = this.getNominations();
+    const index = list.findIndex(
+      (item) => item.id.toLowerCase() === nominationId.toLowerCase() || (item.number && item.number.toLowerCase() === nominationId.toLowerCase())
+    );
+    if (index === -1) return { success: false, error: "Request not found." };
+
+    const current = list[index];
+    const comments = current.comments || [];
+    const targetComment = comments.find((c) => c.id === commentId);
+    if (!targetComment) return { success: false, error: "Comment not found." };
+
+    const cleanEmail = (userEmail || "").trim().toLowerCase();
+    const cleanRole = (userRole || "").trim().toLowerCase();
+
+    // Author or admin can delete
+    if (cleanRole !== "admin" && targetComment.authorEmail.toLowerCase() !== cleanEmail) {
+      return { success: false, error: "You are not authorized to delete this comment." };
+    }
+
+    // Filter out target comment and any direct replies to it
+    const updatedComments = comments.filter((c) => c.id !== commentId && c.parentId !== commentId);
+
+    list[index] = { ...current, comments: updatedComments };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    } catch (e) {
+      console.error(e);
+    }
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("easyapprove_nominations_updated"));
+    }
+
     return { success: true };
   },
 };

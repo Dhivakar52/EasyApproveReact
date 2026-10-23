@@ -9,6 +9,81 @@ import { Pagination } from "@/common/Pagination";
 import { TableSearch } from "@/common/TableSearch";
 import { ActionMenu } from "@/common/ActionMenu";
 import { toast } from "@/components/ui/sonner";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { getStatusConfig } from "@/config/status.config";
+
+interface TruncatedNotificationMessageProps {
+  message: string;
+  isUnread: boolean;
+  title?: string;
+  type?: string;
+}
+
+const TruncatedNotificationMessage: React.FC<TruncatedNotificationMessageProps> = ({
+  message,
+  isUnread,
+  title,
+  type,
+}) => {
+  const [open, setOpen] = useState(false);
+  const textRef = React.useRef<HTMLParagraphElement>(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  const checkOverflow = () => {
+    const el = textRef.current;
+    if (el) {
+      setIsOverflowing(el.scrollWidth > el.clientWidth + 1);
+    }
+  };
+
+  useEffect(() => {
+    checkOverflow();
+  }, [message]);
+
+  return (
+    <div className="max-w-md lg:max-w-xl py-0.5">
+      <Popover open={open && isOverflowing} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <p
+            ref={textRef}
+            onMouseEnter={() => {
+              checkOverflow();
+              setOpen(true);
+            }}
+            onMouseLeave={() => setOpen(false)}
+            onFocus={() => {
+              checkOverflow();
+              setOpen(true);
+            }}
+            onBlur={() => setOpen(false)}
+            tabIndex={0}
+            title={isOverflowing ? message : undefined}
+            className={`truncate block text-xs sm:text-sm leading-normal cursor-default outline-none transition-colors ${
+              isUnread ? "font-semibold text-slate-900" : "text-slate-700"
+            }`}
+          >
+            {message}
+          </p>
+        </PopoverTrigger>
+        {isOverflowing && (
+          <PopoverContent
+            side="top"
+            align="start"
+            sideOffset={4}
+            className="z-50 max-w-lg rounded-xl bg-slate-900 text-white text-xs p-3 shadow-xl border border-slate-700 leading-relaxed break-words"
+            onMouseEnter={() => setOpen(true)}
+            onMouseLeave={() => setOpen(false)}
+          >
+            <p className="font-medium text-slate-100">{message}</p>
+          </PopoverContent>
+        )}
+      </Popover>
+      {title && title !== type && (
+        <p className="text-[11px] text-slate-400 mt-0.5 truncate">{title}</p>
+      )}
+    </div>
+  );
+};
 
 export const NotificationTable: React.FC = () => {
   const navigate = useNavigate();
@@ -112,19 +187,7 @@ export const NotificationTable: React.FC = () => {
           const n = row.original;
           const isUnread = !n.read;
           const typeText = n.type || n.title || "Notification";
-          const isApproval =
-            typeText.toLowerCase().includes("approval") ||
-            typeText.toLowerCase().includes("review");
-          const isApproved = typeText.toLowerCase().includes("approved");
-          const isReferral = typeText.toLowerCase().includes("referral");
-
-          const badgeClass = isApproved
-            ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
-            : isApproval
-            ? "bg-amber-50 text-amber-800 border-amber-200/80"
-            : isReferral
-            ? "bg-blue-50 text-blue-700 border-blue-200/80"
-            : "bg-slate-100 text-slate-700 border-slate-200";
+          const cfg = getStatusConfig(typeText);
 
           return (
             <div className="flex items-center gap-2 whitespace-nowrap">
@@ -135,8 +198,9 @@ export const NotificationTable: React.FC = () => {
                 />
               )}
               <span
-                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeClass}`}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${cfg.badgeClass}`}
               >
+                <i className={`${cfg.iconClass} text-[10px]`} />
                 {typeText}
               </span>
             </div>
@@ -150,18 +214,12 @@ export const NotificationTable: React.FC = () => {
           const n = row.original;
           const isUnread = !n.read;
           return (
-            <div className="max-w-xl py-0.5">
-              <p
-                className={`text-xs sm:text-sm leading-relaxed ${
-                  isUnread ? "font-semibold text-slate-900" : "text-slate-700"
-                }`}
-              >
-                {n.message}
-              </p>
-              {n.title && n.title !== n.type && (
-                <p className="text-[11px] text-slate-400 mt-0.5">{n.title}</p>
-              )}
-            </div>
+            <TruncatedNotificationMessage
+              message={n.message}
+              isUnread={isUnread}
+              title={n.title}
+              type={n.type}
+            />
           );
         },
       },

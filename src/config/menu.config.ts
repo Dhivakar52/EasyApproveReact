@@ -31,9 +31,9 @@ export interface MenuItem {
 // Prototype aligned navigation structure
 export const menuConfig: MenuItem[] = [
   { title: 'Dashboard', url: '/home', icon: LayoutDashboard },
-  { title: 'Notifications', url: '/notifications', icon: Bell },
+  { title: 'Notification', url: '/notifications', icon: Bell },
   { title: 'Create Request', url: '/self-nominations', icon: PlusCircle },
-  { title: 'My Requests', url: '/my-nominations', icon: FileText },
+  { title: 'My Request', url: '/my-nominations', icon: FileText },
   { title: 'Approval List', url: '/approvals', icon: CheckSquare },
   {
     title: 'Settings',

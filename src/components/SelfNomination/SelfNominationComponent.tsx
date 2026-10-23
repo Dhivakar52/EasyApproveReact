@@ -11,13 +11,15 @@ import {
   approversByGroup,
   APPROVAL_TYPES,
   BUDGET_OPTIONS,
+  type BudgetOption,
   formatINR,
   getMinDeadlineDate,
 } from '@/config/approval.config';
 import { nominationService } from '@/services/nominationService';
 import type { SupportingDocument, NominationType, Nomination } from '@/dataTypes/nomination';
-import { DatePicker } from '@/components/ui/date-picker';
 import { toast } from '@/components/ui/sonner';
+import { DatePicker } from '@/components/ui/date-picker';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 
 export default function SelfNominationComponent() {
   const { id } = useParams<{ id?: string }>();
@@ -37,36 +39,39 @@ export default function SelfNominationComponent() {
     }
   };
 
-  // Form State matching HTML Prototype Exactly
+  // Form State: 11 Fields
+  // 1. Group
   const [group, setGroup] = useState('');
-  const [approverEmail, setApproverEmail] = useState('');
-  const [approverName, setApproverName] = useState('');
-
-  // CC Selection
-  const [ccGroup, setCcGroup] = useState('');
-  const [ccMemberSelect, setCcMemberSelect] = useState('');
+  // 2. To (Recipient Text Input)
+  const [toInput, setToInput] = useState('');
+  // 3. Cc
   const [ccEmails, setCcEmails] = useState<string[]>([]);
   const [customCcInput, setCustomCcInput] = useState('');
-
-  // Request Content
+  // 4. Request Title
   const [title, setTitle] = useState('');
+  // 5. Request Details
   const [details, setDetails] = useState('');
+  // 6. Request Reason
   const [reason, setReason] = useState('');
-
-  // Financials & Type
+  // 7. Request Category
   const [approvalType, setApprovalType] = useState('Expense Request');
+  // 8. Expected Amount
   const [amount, setAmount] = useState<string>('');
-  const [budgeted, setBudgeted] = useState('Yes');
+  // 9. Is This Budgeted in FY Allocation?
+  const [budgeted, setBudgeted] = useState<BudgetOption>('Yes');
+  // 10. Amount Budgeted (INR)
   const [amountBudgeted, setAmountBudgeted] = useState<string>('');
+  // Reason for Extra Expense
+  const [extraReason, setExtraReason] = useState<string>('');
+  // Deadline
   const [deadline, setDeadline] = useState(getMinDeadlineDate(2));
-  const [extraReason, setExtraReason] = useState('');
-
-  // Supporting Files
+  // 11. Supporting Files
   const [files, setFiles] = useState<SupportingDocument[]>([]);
+
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Validation Errors
+  // Validation Errors & Submitting state
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -76,10 +81,8 @@ export default function SelfNominationComponent() {
       // Clean create mode
       setEditReq(null);
       setGroup('');
-      setApproverEmail('');
-      setApproverName('');
-      setCcGroup('');
-      setCcMemberSelect('');
+      setToInput('');
+      setDeadline(getMinDeadlineDate(2));
       setCcEmails([]);
       setCustomCcInput('');
       setTitle('');
@@ -89,7 +92,6 @@ export default function SelfNominationComponent() {
       setAmount('');
       setBudgeted('Yes');
       setAmountBudgeted('');
-      setDeadline(getMinDeadlineDate(2));
       setExtraReason('');
       setFiles([]);
       setErrors({});
@@ -106,8 +108,9 @@ export default function SelfNominationComponent() {
     setEditReq(found);
     const initialGroup = found.entity || found.department || '';
     setGroup(initialGroup);
-    setApproverEmail(found.approverEmail || found.managerEmail || '');
-    setApproverName(found.approverName || found.assignedEmployee || '');
+    const initialTo = found.approverEmail || found.managerEmail || found.approverName || '';
+    setToInput(initialTo);
+    setDeadline(found.deadline || getMinDeadlineDate(2));
 
     // CC emails
     const existingCc = found.referrals && found.referrals.length > 0
@@ -120,53 +123,50 @@ export default function SelfNominationComponent() {
     setReason(found.reason || '');
     setApprovalType(found.type || found.category || 'Expense Request');
     setAmount(found.amount !== undefined && found.amount !== null ? String(found.amount) : '');
-    setBudgeted(found.budgeted || found.isBudgeted || 'Yes');
+    const rawBudgeted = found.budgeted || found.isBudgeted || 'Yes';
+    const isBudgetValue: BudgetOption =
+      rawBudgeted === 'Partially' || rawBudgeted === 'No' || rawBudgeted === 'Yes'
+        ? rawBudgeted
+        : rawBudgeted === 'No'
+          ? 'No'
+          : 'Yes';
+    setBudgeted(isBudgetValue);
     setAmountBudgeted(
       found.amountBudgeted !== undefined && found.amountBudgeted !== null
         ? String(found.amountBudgeted)
         : (found.budgetAllocated !== undefined && found.budgetAllocated !== null ? String(found.budgetAllocated) : '')
     );
-    setDeadline(found.deadline || getMinDeadlineDate(2));
-    setExtraReason(found.extraReason || '');
+    setExtraReason(found.reasonForExtraExpense || found.extraReason || '');
     setFiles(found.attachments || found.supportingDocuments || []);
     setErrors({});
   }, [id, navigate]);
 
-  // Group Approver change handler
+  // Group change handler
   const handleGroupChange = (selectedGroup: string) => {
     setGroup(selectedGroup);
-    setApproverEmail('');
-    setApproverName('');
     if (errors.group) setErrors((prev) => ({ ...prev, group: '' }));
   };
 
-  // Approver Email change handler (auto-fills full name)
-  const handleApproverEmailChange = (email: string) => {
-    setApproverEmail(email);
-    const members = approversByGroup[group] || [];
-    const found = members.find((m) => m.email.toLowerCase() === email.toLowerCase());
-    setApproverName(found ? found.name : '');
-    if (errors.approverEmail) setErrors((prev) => ({ ...prev, approverEmail: '' }));
-  };
+  // CC handlers
+  const addCustomCc = (valueToAdd?: string) => {
+    const raw = (valueToAdd !== undefined ? valueToAdd : customCcInput).trim().toLowerCase();
+    if (!raw) return;
 
-  // CC Group Selection
-  const handleCcMemberSelect = (email: string) => {
-    if (!email) return;
-    if (!ccEmails.includes(email)) {
-      setCcEmails([...ccEmails, email]);
-    }
-    setCcMemberSelect('');
-  };
+    const parts = raw.split(/[,\s]+/).map((p) => p.trim()).filter(Boolean);
+    const newValidEmails: string[] = [];
 
-  const addCustomCc = () => {
-    const trimmed = customCcInput.trim().toLowerCase();
-    if (!trimmed) return;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      toast.error('Please enter a valid email address.');
-      return;
+    for (const part of parts) {
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(part)) {
+        if (!ccEmails.includes(part) && !newValidEmails.includes(part)) {
+          newValidEmails.push(part);
+        }
+      } else {
+        toast.error(`"${part}" is not a valid email address.`);
+      }
     }
-    if (!ccEmails.includes(trimmed)) {
-      setCcEmails([...ccEmails, trimmed]);
+
+    if (newValidEmails.length > 0) {
+      setCcEmails((prev) => [...prev, ...newValidEmails]);
     }
     setCustomCcInput('');
   };
@@ -175,20 +175,30 @@ export default function SelfNominationComponent() {
     setCcEmails(ccEmails.filter((e) => e !== emailToRemove));
   };
 
-  // Budget radio/select change handler
-  const handleBudgetedChange = (val: string) => {
+  // Budget change handler
+  const handleBudgetedChange = (val: BudgetOption) => {
     setBudgeted(val);
+    if (errors.budgeted) setErrors((prev) => ({ ...prev, budgeted: '' }));
     if (val === 'No') {
       setAmountBudgeted('0');
+      setExtraReason('');
+      if (errors.amountBudgeted) setErrors((prev) => ({ ...prev, amountBudgeted: '' }));
+      if (errors.extraReason) setErrors((prev) => ({ ...prev, extraReason: '' }));
     } else if (amountBudgeted === '0') {
       setAmountBudgeted('');
     }
   };
 
-  // Check if expected amount exceeds budgeted amount
-  const parsedAmount = parseFloat(amount) || 0;
-  const parsedBudget = parseFloat(amountBudgeted) || 0;
-  const exceedsBudget = Boolean(budgeted && parsedAmount > 0 && parsedBudget > 0 && parsedAmount > parsedBudget);
+  const isBudgetedOption = budgeted === 'Yes' || budgeted === 'Partially';
+  const parsedExpectedAmount = Number(amount);
+  const parsedBudgetAmount = Number(amountBudgeted);
+  const isExtraExpenseRequired =
+    isBudgetedOption &&
+    amount.trim() !== '' &&
+    !isNaN(parsedExpectedAmount) &&
+    amountBudgeted.trim() !== '' &&
+    !isNaN(parsedBudgetAmount) &&
+    parsedBudgetAmount < parsedExpectedAmount;
 
   // File Upload Handlers
   const handleProcessFiles = (fileList: FileList | File[]) => {
@@ -230,21 +240,40 @@ export default function SelfNominationComponent() {
     const newErrors: Record<string, string> = {};
 
     if (!group) newErrors.group = 'Select a Group.';
-    if (!approverEmail) newErrors.approverEmail = 'Select an approver official email.';
-    if (!approverName) newErrors.approverName = 'Approver name must be populated.';
+    if (!toInput.trim()) newErrors.to = 'Enter recipient email or details.';
     if (!title.trim()) newErrors.title = 'Enter a request title.';
     if (!details.trim()) newErrors.details = 'Provide details of request.';
     if (!reason.trim()) newErrors.reason = 'Explain the reason for requirement.';
+    if (!approvalType) newErrors.approvalType = 'Select a request category.';
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       newErrors.amount = 'Enter a valid expected amount in INR.';
     }
     if (!budgeted) newErrors.budgeted = 'Select whether this item is budgeted.';
-    if (budgeted !== 'No' && (!amountBudgeted || isNaN(Number(amountBudgeted)))) {
-      newErrors.amountBudgeted = 'Enter the allocated budget amount.';
+    if (isBudgetedOption) {
+      if (!amountBudgeted || isNaN(Number(amountBudgeted)) || Number(amountBudgeted) < 0) {
+        newErrors.amountBudgeted = 'Enter the amount budgeted in INR.';
+      }
+      if (
+        amount &&
+        !isNaN(Number(amount)) &&
+        amountBudgeted &&
+        !isNaN(Number(amountBudgeted)) &&
+        Number(amountBudgeted) < Number(amount)
+      ) {
+        if (!extraReason.trim()) {
+          newErrors.extraReason = 'Reason for Extra Expense is required when Expected Amount exceeds the Budgeted Amount.';
+        }
+      }
     }
-    if (!deadline) newErrors.deadline = 'Select a valid deadline date.';
-    if (exceedsBudget && !extraReason.trim()) {
-      newErrors.extraReason = 'Mandatory when requested amount exceeds budgeted allocation.';
+    if (!deadline) {
+      newErrors.deadline = 'Select a deadline date.';
+    } else {
+      const selected = new Date(deadline);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (selected < today) {
+        newErrors.deadline = 'Deadline cannot be in the past.';
+      }
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -270,6 +299,38 @@ export default function SelfNominationComponent() {
       }
     }
 
+    const trimmedTo = toInput.trim();
+    let finalApproverEmail = trimmedTo;
+    let finalApproverName = trimmedTo;
+
+    // Check if input has an email format
+    const emailMatch = trimmedTo.match(/<([^>]+)>/) || trimmedTo.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+    if (emailMatch) {
+      finalApproverEmail = emailMatch[1];
+      const namePart = trimmedTo.split('<')[0].trim();
+      if (namePart && namePart !== finalApproverEmail) {
+        finalApproverName = namePart;
+      } else {
+        const allMembers = Object.values(approversByGroup).flat();
+        const matched = allMembers.find((m) => m.email.toLowerCase() === finalApproverEmail.toLowerCase());
+        finalApproverName = matched ? matched.name : finalApproverEmail.split('@')[0].replace(/[._]/g, ' ');
+      }
+    } else {
+      const allMembers = Object.values(approversByGroup).flat();
+      const matched = allMembers.find((m) => m.name.toLowerCase() === trimmedTo.toLowerCase());
+      if (matched) {
+        finalApproverEmail = matched.email;
+        finalApproverName = matched.name;
+      }
+    }
+
+    const effectiveDeadline = deadline || (isEditMode && editReq?.deadline) || getMinDeadlineDate(2);
+    const parsedAllocatedBudget = budgeted === 'No' ? 0 : (Number(amountBudgeted) || 0);
+    const finalExtraReason =
+      isBudgetedOption && parsedAllocatedBudget < (Number(amount) || 0)
+        ? extraReason.trim()
+        : '';
+
     try {
       if (isEditMode && editReq) {
         // Edit Mode: Resubmit existing request and increment version
@@ -281,21 +342,22 @@ export default function SelfNominationComponent() {
           nominationType: (approvalType.includes('Travel') ? 'Travel Expenses' : 'Project') as NominationType,
           type: approvalType,
           amount: Number(amount) || 0,
-          deadline: deadline,
-          budgetAllocated: Number(amountBudgeted) || 0,
-          amountBudgeted: Number(amountBudgeted) || 0,
+          deadline: effectiveDeadline,
+          budgetAllocated: parsedAllocatedBudget,
+          amountBudgeted: parsedAllocatedBudget,
           budgeted: budgeted,
           isBudgeted: budgeted,
-          extraReason: extraReason,
-          approverName: approverName,
-          approverEmail: approverEmail,
-          assignedEmployee: approverName,
-          managerEmail: approverEmail,
+          extraReason: finalExtraReason,
+          reasonForExtraExpense: finalExtraReason,
+          approverName: finalApproverName || editReq.approverName || 'Approver',
+          approverEmail: finalApproverEmail,
+          assignedEmployee: finalApproverName || editReq.approverName || 'Approver',
+          managerEmail: finalApproverEmail,
           referrals: ccEmails,
           ccEmail: ccEmails.join(', '),
           details: details.trim(),
           reason: reason.trim(),
-          description: `${details}\n\nJustification: ${reason}${extraReason ? `\n\nExtra Budget Rationale: ${extraReason}` : ''}`,
+          description: `${details.trim()}\n\nJustification: ${reason.trim()}`,
           supportingDocuments: files,
           attachments: files,
         };
@@ -316,7 +378,7 @@ export default function SelfNominationComponent() {
           toast.error(res.error || 'Failed to update request.');
         }
       } else {
-        // Create Mode: Connect to existing nominationService backend logic
+        // Create Mode: Connect to existing nominationService
         nominationService.createNomination({
           title: title.trim(),
           nominee: currentUserName,
@@ -327,24 +389,25 @@ export default function SelfNominationComponent() {
           nominationType: (approvalType.includes('Travel') ? 'Travel Expenses' : 'Project') as NominationType,
           type: approvalType,
           amount: Number(amount) || 0,
-          deadline: deadline,
-          budgetAllocated: Number(amountBudgeted) || 0,
-          amountBudgeted: Number(amountBudgeted) || 0,
+          deadline: effectiveDeadline,
+          budgetAllocated: parsedAllocatedBudget,
+          amountBudgeted: parsedAllocatedBudget,
           budgeted: budgeted,
           isBudgeted: budgeted,
-          extraReason: extraReason,
-          approverName: approverName,
-          approverEmail: approverEmail,
+          extraReason: finalExtraReason,
+          reasonForExtraExpense: finalExtraReason,
+          approverName: finalApproverName,
+          approverEmail: finalApproverEmail,
           requesterName: currentUserName,
           requesterEmail: currentUserEmail,
           createdAt: new Date().toISOString().split('T')[0],
-          assignedEmployee: approverName,
-          managerEmail: approverEmail,
+          assignedEmployee: finalApproverName,
+          managerEmail: finalApproverEmail,
           referrals: ccEmails,
           ccEmail: ccEmails.join(', '),
           details: details.trim(),
           reason: reason.trim(),
-          description: `${details}\n\nJustification: ${reason}${extraReason ? `\n\nExtra Budget Rationale: ${extraReason}` : ''}`,
+          description: `${details.trim()}\n\nJustification: ${reason.trim()}`,
           supportingDocuments: files,
           attachments: files.map((f) => ({
             id: f.id,
@@ -358,8 +421,8 @@ export default function SelfNominationComponent() {
             ? {
               purpose: title,
               destination: group,
-              departureDate: deadline,
-              returnDate: deadline,
+              departureDate: effectiveDeadline,
+              returnDate: effectiveDeadline,
               travelMode: 'Official Flight / Transport',
               estimatedCost: amount,
               justification: reason,
@@ -414,59 +477,52 @@ export default function SelfNominationComponent() {
         </div>
       )}
 
-      {/* Title & Description matching HTML Prototype */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-start gap-3">
-          {/* {(isModifyMode || isEditMode) && (
-            <button
-              type="button"
-              onClick={handleBack}
-              className="mt-0.5 inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition shadow-xs cursor-pointer shrink-0"
-              title="Back"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          )} */}
-          <div>
-            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-              {isEditMode ? 'Modify Approval Request' : 'Create Approval Request'}
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-              {isEditMode ? (
-                <>
-                  Editing proposal{' '}
-                  <span className="font-mono font-bold text-slate-800">
-                    {editReq?.number || editReq?.id}
-                  </span>{' '}
-                  (Revision v{editReq?.version || 1}). Resubmission will increment revision state and notify stakeholders.
-                </>
-              ) : (
-                'Submit a formal expenditure, travel, or process approval request into the multi-stage corporate governance chain.'
-              )}
-            </p>
-          </div>
-        </div>
-        {isEditMode && editReq && (
-          <span className="badge badge-clarify font-bold text-xs py-1 px-3">
-            {editReq.status}
-          </span>
-        )}
-      </div>
+
 
       <form onSubmit={handleSubmit} className="space-y-6" noValidate>
-        {/* Single Card Layout matching prototype class 'card card-pad space-y-4' */}
-        <section className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 sm:p-6 lg:p-8 space-y-5">
-          {/* Row 1 – Three columns: SRM Group Approver | SRM Group Member Email | Approver Full Name */}
-          <div className="grid gap-4 sm:grid-cols-3">
+        {/* Single Card Layout with the 11 fields in exact order */}
+        <section className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-6  space-y-5">
+
+          {/* Title & Description */}
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+                  {isEditMode ? 'Modify Approval Request' : 'Create Approval Request'}
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+                  {isEditMode ? (
+                    <>
+                      Editing proposal{' '}
+                      <span className="font-mono font-bold text-slate-800">
+                        {editReq?.number || editReq?.id}
+                      </span>{' '}
+                      (Revision v{editReq?.version || 1}). Resubmission will increment revision state and notify stakeholders.
+                    </>
+                  ) : (
+                    'Submit a formal expenditure, travel, or process approval request into the multi-stage corporate governance chain.'
+                  )}
+                </p>
+              </div>
+            </div>
+            {isEditMode && editReq && (
+              <StatusBadge status={editReq.status} className="font-bold text-xs py-1 px-3" />
+            )}
+          </div>
+          {/* Row 1: 1. Group & 2. To */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* 1. Group */}
             <div>
               <label htmlFor="f-group" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                SRM Group Approver <span className="text-rose-500">*</span>
+                Group <span className="text-rose-500">*</span>
               </label>
               <select
                 id="f-group"
                 value={group}
                 onChange={(e) => handleGroupChange(e.target.value)}
-                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.group ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.group
+                  ? 'border-rose-400 focus:ring-rose-200'
+                  : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
                   }`}
               >
                 <option value="">Select Group</option>
@@ -479,96 +535,33 @@ export default function SelfNominationComponent() {
               {errors.group && <p className="text-[11px] text-rose-600 mt-1">{errors.group}</p>}
             </div>
 
+            {/* 2. To */}
             <div>
-              <label htmlFor="f-approverEmail" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                SRM Group Member Email <span className="text-rose-500">*</span>
-              </label>
-              <select
-                id="f-approverEmail"
-                value={approverEmail}
-                onChange={(e) => handleApproverEmailChange(e.target.value)}
-                disabled={!group}
-                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition disabled:bg-slate-50 disabled:text-slate-400 ${errors.approverEmail ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
-                  }`}
-              >
-                <option value="">{group ? 'Select Approver Email' : 'Select Group First'}</option>
-                {group &&
-                  (approversByGroup[group] || []).map((m) => (
-                    <option key={m.email} value={m.email}>
-                      {m.email}
-                    </option>
-                  ))}
-              </select>
-              {errors.approverEmail && <p className="text-[11px] text-rose-600 mt-1">{errors.approverEmail}</p>}
-            </div>
-
-            <div>
-              <label htmlFor="f-approverName" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Approver Full Name <span className="text-rose-500">*</span>
+              <label htmlFor="f-to" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                To <span className="text-rose-500">*</span>
               </label>
               <input
-                id="f-approverName"
+                id="f-to"
                 type="text"
-                readOnly
-                disabled
-                value={approverName}
-                placeholder="Auto-populated based on email selection"
-                className="w-full text-xs py-2.5 px-3 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 font-medium cursor-not-allowed"
-              />
-              {errors.approverName && <p className="text-[11px] text-rose-600 mt-1">{errors.approverName}</p>}
-            </div>
-          </div>
-
-          {/* Row 2 – Two columns: SRM Group Mail for CC | SRM Group Member Email for CC */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="f-cc-group" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                SRM Group Mail for CC
-              </label>
-              <select
-                id="f-cc-group"
-                value={ccGroup}
+                value={toInput}
                 onChange={(e) => {
-                  setCcGroup(e.target.value);
-                  setCcMemberSelect('');
+                  setToInput(e.target.value);
+                  if (errors.to) setErrors((prev) => ({ ...prev, to: '' }));
                 }}
-                className="w-full text-xs py-2.5 px-3 rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition"
-              >
-                <option value="">Select Group</option>
-                {GROUPS.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label htmlFor="f-cc-member-select" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                SRM Group Member Email for CC {ccGroup ? `(${ccGroup})` : ''}
-              </label>
-              <select
-                id="f-cc-member-select"
-                value={ccMemberSelect}
-                onChange={(e) => handleCcMemberSelect(e.target.value)}
-                disabled={!ccGroup}
-                className="w-full text-xs py-2.5 px-3 rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition disabled:bg-slate-50 disabled:text-slate-400"
-              >
-                <option value="">{ccGroup ? 'Select Member to CC' : 'Select Group First'}</option>
-                {ccGroup &&
-                  (approversByGroup[ccGroup] || []).map((m) => (
-                    <option key={m.email} value={m.email}>
-                      {m.name} ({m.email})
-                    </option>
-                  ))}
-              </select>
+                placeholder="e.g. karthik.subramanian@srmtech.com"
+                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.to
+                  ? 'border-rose-400 focus:ring-rose-200'
+                  : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                  }`}
+              />
+              {errors.to && <p className="text-[11px] text-rose-600 mt-1">{errors.to}</p>}
             </div>
           </div>
 
-          {/* Row 3 – Full width: Emails CC */}
+          {/* Row 2: 3. Cc */}
           <div>
             <label htmlFor="f-cc-input" className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Emails CC <span className="text-slate-400 font-normal text-xs ml-1">Optional</span>
+              Cc <span className="text-slate-400 font-normal text-xs ml-1">Optional</span>
             </label>
             <div className="p-2 rounded-lg border border-slate-300 focus-within:border-emerald-600 focus-within:ring-2 focus-within:ring-emerald-500/20 bg-white min-h-[42px] flex flex-wrap items-center gap-1.5 transition">
               {ccEmails.map((eml) => (
@@ -581,6 +574,7 @@ export default function SelfNominationComponent() {
                     type="button"
                     onClick={() => removeCcEmail(eml)}
                     className="text-emerald-600 hover:text-emerald-900 cursor-pointer ml-0.5"
+                    title="Remove email"
                   >
                     <X size={12} />
                   </button>
@@ -589,6 +583,7 @@ export default function SelfNominationComponent() {
               <input
                 id="f-cc-input"
                 type="email"
+                list="cc-suggestions"
                 value={customCcInput}
                 onChange={(e) => setCustomCcInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -597,14 +592,25 @@ export default function SelfNominationComponent() {
                     addCustomCc();
                   }
                 }}
-                onBlur={addCustomCc}
-                placeholder={ccEmails.length === 0 ? 'Type email and press Enter or select from dropdown above...' : 'Add more...'}
+                onBlur={() => {
+                  if (customCcInput.trim()) addCustomCc();
+                }}
+                placeholder={ccEmails.length === 0 ? 'Type email and press Enter...' : 'Add more...'}
                 className="flex-1 min-w-[200px] text-xs outline-none bg-transparent py-1 px-1 text-slate-800 placeholder:text-slate-400"
               />
+              <datalist id="cc-suggestions">
+                {Object.entries(approversByGroup).flatMap(([grpName, members]) =>
+                  members.map((m) => (
+                    <option key={`${grpName}-${m.email}`} value={m.email}>
+                      {m.name} ({grpName})
+                    </option>
+                  ))
+                )}
+              </datalist>
             </div>
           </div>
 
-          {/* Row 4 – Full width: Request Title */}
+          {/* Row 3: 4. Request Title */}
           <div>
             <label htmlFor="f-title" className="block text-xs font-semibold text-slate-700 mb-1.5">
               Request Title <span className="text-rose-500">*</span>
@@ -618,16 +624,18 @@ export default function SelfNominationComponent() {
                 if (errors.title) setErrors((prev) => ({ ...prev, title: '' }));
               }}
               placeholder="e.g. Developer Laptops for Q4 Engineering Onboarding"
-              className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.title ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+              className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.title
+                ? 'border-rose-400 focus:ring-rose-200'
+                : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
                 }`}
             />
             {errors.title && <p className="text-[11px] text-rose-600 mt-1">{errors.title}</p>}
           </div>
 
-          {/* Row 5 – Full width: Details of Request */}
+          {/* Row 4: 5. Request Details */}
           <div>
             <label htmlFor="f-details" className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Details of Request <span className="text-rose-500">*</span>
+              Request Details <span className="text-rose-500">*</span>
             </label>
             <textarea
               id="f-details"
@@ -638,16 +646,18 @@ export default function SelfNominationComponent() {
                 if (errors.details) setErrors((prev) => ({ ...prev, details: '' }));
               }}
               placeholder="Provide specifications, quantities, scope of work, or change parameters..."
-              className={`w-full text-xs p-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.details ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+              className={`w-full text-xs p-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.details
+                ? 'border-rose-400 focus:ring-rose-200'
+                : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
                 }`}
             />
             {errors.details && <p className="text-[11px] text-rose-600 mt-1">{errors.details}</p>}
           </div>
 
-          {/* Row 6 – Full width: Reason For Requirement */}
+          {/* Row 5: 6. Request Reason */}
           <div>
             <label htmlFor="f-reason" className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Reason For Requirement <span className="text-rose-500">*</span>
+              Request Reason <span className="text-rose-500">*</span>
             </label>
             <textarea
               id="f-reason"
@@ -658,23 +668,32 @@ export default function SelfNominationComponent() {
                 if (errors.reason) setErrors((prev) => ({ ...prev, reason: '' }));
               }}
               placeholder="Explain the operational or commercial necessity..."
-              className={`w-full text-xs p-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.reason ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+              className={`w-full text-xs p-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.reason
+                ? 'border-rose-400 focus:ring-rose-200'
+                : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
                 }`}
             />
             {errors.reason && <p className="text-[11px] text-rose-600 mt-1">{errors.reason}</p>}
           </div>
 
-          {/* Row 7 – Three columns: Approval Category | Expected Amount Including Taxes (INR) | Is This Budgeted in FY Allocation? */}
-          <div className="grid gap-4 sm:grid-cols-3">
+          {/* Row 6: 7. Request Category & 8. Expected Amount */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* 7. Request Category */}
             <div>
               <label htmlFor="f-type" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Approval Category <span className="text-rose-500">*</span>
+                Request Category <span className="text-rose-500">*</span>
               </label>
               <select
                 id="f-type"
                 value={approvalType}
-                onChange={(e) => setApprovalType(e.target.value)}
-                className="w-full text-xs py-2.5 px-3 rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition"
+                onChange={(e) => {
+                  setApprovalType(e.target.value);
+                  if (errors.approvalType) setErrors((prev) => ({ ...prev, approvalType: '' }));
+                }}
+                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.approvalType
+                  ? 'border-rose-400 focus:ring-rose-200'
+                  : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                  }`}
               >
                 {APPROVAL_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -682,11 +701,13 @@ export default function SelfNominationComponent() {
                   </option>
                 ))}
               </select>
+              {errors.approvalType && <p className="text-[11px] text-rose-600 mt-1">{errors.approvalType}</p>}
             </div>
 
+            {/* 8. Expected Amount */}
             <div>
               <label htmlFor="f-amount" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Expected Amount Including Taxes (INR) <span className="text-rose-500">*</span>
+                Expected Amount <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <input
@@ -701,7 +722,9 @@ export default function SelfNominationComponent() {
                     if (errors.amount) setErrors((prev) => ({ ...prev, amount: '' }));
                   }}
                   placeholder="0.00"
-                  className={`w-full text-xs py-2.5 pl-3 pr-8 rounded-lg border bg-white focus:outline-none focus:ring-2 transition font-mono ${errors.amount ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                  className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition font-mono ${errors.amount
+                    ? 'border-rose-400 focus:ring-rose-200'
+                    : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
                     }`}
                 />
               </div>
@@ -714,7 +737,11 @@ export default function SelfNominationComponent() {
                 {errors.amount && <p className="text-[11px] text-rose-600">{errors.amount}</p>}
               </div>
             </div>
+          </div>
 
+          {/* Row 7: 9. Is This Budgeted in FY Allocation? & 10. Amount Budgeted (INR) */}
+          <div className={isBudgetedOption ? "grid gap-4 sm:grid-cols-2" : "grid gap-4"}>
+            {/* 9. Is This Budgeted in FY Allocation? — Yes/Partially/No selection */}
             <div>
               <label htmlFor="f-budgeted" className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Is This Budgeted in FY Allocation? <span className="text-rose-500">*</span>
@@ -722,8 +749,11 @@ export default function SelfNominationComponent() {
               <select
                 id="f-budgeted"
                 value={budgeted}
-                onChange={(e) => handleBudgetedChange(e.target.value)}
-                className="w-full text-xs py-2.5 px-3 rounded-lg border border-slate-300 bg-white focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition"
+                onChange={(e) => handleBudgetedChange(e.target.value as BudgetOption)}
+                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.budgeted
+                  ? 'border-rose-400 focus:ring-rose-200'
+                  : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                  }`}
               >
                 {BUDGET_OPTIONS.map((opt) => (
                   <option key={opt} value={opt}>
@@ -731,59 +761,51 @@ export default function SelfNominationComponent() {
                   </option>
                 ))}
               </select>
+              {errors.budgeted && <p className="text-[11px] text-rose-600 mt-1">{errors.budgeted}</p>}
             </div>
+
+            {/* 10. Amount Budgeted (INR) — Displayed only when user selects YES or PARTIALLY */}
+            {isBudgetedOption && (
+              <div>
+                <label htmlFor="f-amountBudgeted" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Amount Budgeted (INR) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  id="f-amountBudgeted"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={amountBudgeted}
+                  onChange={(e) => {
+                    setAmountBudgeted(e.target.value);
+                    if (errors.amountBudgeted) setErrors((prev) => ({ ...prev, amountBudgeted: '' }));
+                    if (errors.extraReason) setErrors((prev) => ({ ...prev, extraReason: '' }));
+                  }}
+                  placeholder="0.00"
+                  className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition font-mono ${errors.amountBudgeted
+                    ? 'border-rose-400 focus:ring-rose-200'
+                    : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                    }`}
+                />
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-[11px] text-slate-400">
+                    Enter the approved departmental budget cap.
+                  </p>
+                  {amountBudgeted && !isNaN(Number(amountBudgeted)) && (
+                    <span className="font-mono text-xs font-semibold text-slate-600">
+                      {formatINR(amountBudgeted)}
+                    </span>
+                  )}
+                </div>
+                {errors.amountBudgeted && <p className="text-[11px] text-rose-600">{errors.amountBudgeted}</p>}
+              </div>
+            )}
           </div>
 
-          {/* Row 8 – Two columns: Allocated Budget Amount (INR) | Deadline Date */}
-          <div className="grid gap-4 sm:grid-cols-2">
+          {/* Conditional Field: Reason for Extra Expense — Displayed when Amount Budgeted < Expected Amount */}
+          {isExtraExpenseRequired && (
             <div>
-              <label htmlFor="f-amountBudgeted" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Allocated Budget Amount (INR) <span className="text-rose-500">*</span>
-              </label>
-              <input
-                id="f-amountBudgeted"
-                type="number"
-                min="0"
-                step="any"
-                disabled={budgeted === 'No'}
-                value={amountBudgeted}
-                onChange={(e) => {
-                  setAmountBudgeted(e.target.value);
-                  if (errors.amountBudgeted) setErrors((prev) => ({ ...prev, amountBudgeted: '' }));
-                }}
-                placeholder={budgeted === 'No' ? '0' : '0.00'}
-                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition font-mono disabled:bg-slate-50 disabled:text-slate-400 ${errors.amountBudgeted ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
-                  }`}
-              />
-              <p className="text-[11px] text-slate-400 mt-1">
-                {budgeted === 'No' ? 'Defaults to ₹ 0 if not budgeted.' : 'Enter the approved departmental budget cap.'}
-              </p>
-              {errors.amountBudgeted && <p className="text-[11px] text-rose-600">{errors.amountBudgeted}</p>}
-            </div>
-
-            <div>
-              <label htmlFor="f-deadline" className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Deadline Date <span className="text-rose-500">*</span>
-              </label>
-              <DatePicker
-                id="f-deadline"
-                minDate={getMinDeadlineDate(2)}
-                value={deadline}
-                onChange={(d) => {
-                  setDeadline(d);
-                  if (errors.deadline) setErrors((prev) => ({ ...prev, deadline: '' }));
-                }}
-                className={`py-2.5 ${errors.deadline ? 'border-rose-400 focus:ring-rose-200' : ''}`}
-              />
-              <p className="text-[11px] text-slate-400 mt-1">Minimum 2 business days required.</p>
-              {errors.deadline && <p className="text-[11px] text-rose-600">{errors.deadline}</p>}
-            </div>
-          </div>
-
-          {/* Row 9 – Full width (conditional): Reason for Extra Expense */}
-          {exceedsBudget && (
-            <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2">
-              <label htmlFor="f-extraReason" className="block text-xs font-semibold text-amber-900">
+              <label htmlFor="f-extraReason" className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Reason for Extra Expense <span className="text-rose-500">*</span>
               </label>
               <textarea
@@ -794,21 +816,51 @@ export default function SelfNominationComponent() {
                   setExtraReason(e.target.value);
                   if (errors.extraReason) setErrors((prev) => ({ ...prev, extraReason: '' }));
                 }}
-                placeholder="Explain why the requested expenditure exceeds the allocated budget..."
-                className={`w-full text-xs p-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.extraReason ? 'border-rose-400 focus:ring-rose-200' : 'border-amber-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                placeholder="Explain the justification for exceeding the allocated budget amount..."
+                className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition resize-y ${errors.extraReason
+                  ? 'border-rose-400 focus:ring-rose-200'
+                  : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
                   }`}
               />
-              <p className="text-[11px] text-amber-800">
-                Mandatory when requested amount exceeds budgeted allocation.
-              </p>
-              {errors.extraReason && <p className="text-[11px] text-rose-600">{errors.extraReason}</p>}
+              <div className="flex items-center justify-between mt-1">
+                <p className="text-[11px] text-amber-600 font-medium">
+                  Expected amount ({formatINR(amount)}) exceeds the budgeted amount ({formatINR(amountBudgeted)}). Justification is mandatory.
+                </p>
+              </div>
+              {errors.extraReason && <p className="text-[11px] text-rose-600 mt-1">{errors.extraReason}</p>}
             </div>
           )}
 
-          {/* Row 10 – Full width: Supporting Files & Quotations */}
+          {/* Row 8: Deadline */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="f-deadline" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Deadline <span className="text-rose-500">*</span>
+              </label>
+              <DatePicker
+                id="f-deadline"
+                value={deadline}
+                minDate={getMinDeadlineDate(0)}
+                onChange={(val) => {
+                  setDeadline(val);
+                  if (errors.deadline) setErrors((prev) => ({ ...prev, deadline: '' }));
+                }}
+                placeholder="DD-MM-YYYY"
+                className={errors.deadline ? 'border-rose-400 focus:ring-rose-200' : ''}
+              />
+              <div className="flex items-center justify-between mt-1">
+                <p className="text-[11px] text-slate-400">
+                  Select target completion date (must be today or in the future).
+                </p>
+              </div>
+              {errors.deadline && <p className="text-[11px] text-rose-600 mt-1">{errors.deadline}</p>}
+            </div>
+          </div>
+
+          {/* Row 9: 11. Supporting Files */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Supporting Files &amp; Quotations <span className="text-slate-400 font-normal text-xs ml-1">Optional, up to 4 files</span>
+              Supporting Files <span className="text-slate-400 font-normal text-xs ml-1">Optional, up to 4 files</span>
             </label>
 
             <div
@@ -864,6 +916,7 @@ export default function SelfNominationComponent() {
                       type="button"
                       onClick={() => removeFile(file.id)}
                       className="p-1 rounded text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                      title="Remove file"
                     >
                       <X size={14} />
                     </button>
@@ -871,44 +924,47 @@ export default function SelfNominationComponent() {
                 ))}
               </div>
             )}
+
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap justify-end items-center gap-3">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="px-6 py-2.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs shadow-md shadow-emerald-700/20 transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
+            >
+              {isSubmitting ? (
+                <i className="fa-solid fa-circle-notch fa-spin"></i>
+              ) : isEditMode ? (
+                <i className="fa-solid fa-arrow-up-from-bracket"></i>
+              ) : (
+                <i className="fa-solid fa-paper-plane"></i>
+              )}
+              <span>
+                {isEditMode
+                  ? `Resubmit Request (v${(editReq?.version || 1) + 1})`
+                  : 'Submit For Approval'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (isEditMode && editReq) {
+                  navigate(`/my-nominations/${editReq.number || editReq.id}`);
+                } else {
+                  navigate('/my-nominations');
+                }
+              }}
+              className="px-5 py-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs transition cursor-pointer"
+            >
+              Cancel
+            </button>
           </div>
         </section>
 
-        {/* Action Buttons matching HTML prototype */}
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="px-6 py-2.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs shadow-md shadow-emerald-700/20 transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
-          >
-            {isSubmitting ? (
-              <i className="fa-solid fa-circle-notch fa-spin"></i>
-            ) : isEditMode ? (
-              <i className="fa-solid fa-arrow-up-from-bracket"></i>
-            ) : (
-              <i className="fa-solid fa-paper-plane"></i>
-            )}
-            <span>
-              {isEditMode
-                ? `Resubmit Request (v${(editReq?.version || 1) + 1})`
-                : 'Submit For Approval'}
-            </span>
-          </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (isEditMode && editReq) {
-                navigate(`/my-nominations/${editReq.number || editReq.id}`);
-              } else {
-                navigate('/my-nominations');
-              }
-            }}
-            className="px-5 py-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs transition cursor-pointer"
-          >
-            Cancel
-          </button>
-        </div>
       </form>
     </div>
   );

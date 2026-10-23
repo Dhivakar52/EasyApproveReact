@@ -14,6 +14,7 @@ import {
 import { nominationService } from "@/services/nominationService";
 import type { NominationStatus } from "@/dataTypes/nomination";
 import type { UserRole } from "@/dataTypes/roles";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 
 export interface ApprovalNominationItem {
   id: string;
@@ -30,14 +31,6 @@ interface NominationSidePanelProps {
   nomination: ApprovalNominationItem | null;
   onStatusUpdated?: () => void;
 }
-
-const statusColors: Record<string, string> = {
-  Pending: "bg-orange-100 text-orange-800",
-  "In Review": "bg-blue-100 text-blue-800",
-  "Under Review": "bg-yellow-100 text-yellow-800",
-  Approved: "bg-emerald-100 text-emerald-800",
-  Rejected: "bg-red-100 text-red-800",
-};
 
 const ApprovalPanel = ({
   isOpen,
@@ -85,13 +78,7 @@ const ApprovalPanel = ({
             <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
               {nomination.id}
             </span>
-            <span
-              className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                statusColors[nomination.status] || "bg-gray-100 text-gray-800"
-              }`}
-            >
-              {nomination.status}
-            </span>
+            <StatusBadge status={nomination.status} />
           </div>
 
           <h3 className="font-bold text-gray-900 text-sm">

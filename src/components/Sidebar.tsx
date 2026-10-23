@@ -40,7 +40,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const updateCounts = () => {
       try {
         const noms = nominationService.getNominations();
-        const pending = noms.filter((n) => n.status === 'Pending').length;
+        let pending = 0;
+        const cleanEmail = userEmail.toLowerCase().trim();
+        if (userRole === 'admin') {
+          pending = noms.filter((n) => n.status === 'Pending' || n.status === 'In Review').length;
+        } else {
+          pending = noms.filter(
+            (n) =>
+              (n.status === 'Pending' || n.status === 'In Review' || n.status === 'Clarification Required') &&
+              ((n.approverEmail?.toLowerCase() === cleanEmail) ||
+               (n.managerEmail?.toLowerCase() === cleanEmail) ||
+               (cleanEmail.includes('approver') && (n.approverName?.toLowerCase().includes('approver') || n.approverName?.toLowerCase().includes('karthik'))) ||
+               (n.reassignments || []).some((re) => re.toEmail?.toLowerCase().trim() === cleanEmail) ||
+               (n.reassignmentHistory || []).some((rh) => rh.newOwner?.toLowerCase().trim() === cleanEmail))
+          ).length;
+        }
         setPendingCount(pending);
 
         const notifs = nominationService.getNotifications();
@@ -57,7 +71,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       window.removeEventListener('easyapprove_nominations_updated', updateCounts);
       window.removeEventListener('easyapprove_notifications_updated', updateCounts);
     };
-  }, []);
+  }, [userRole, userEmail]);
 
   const isSearching = search.trim().length > 0;
 
@@ -71,6 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleLogout = () => {
     localStorage.removeItem('userRole');
     localStorage.removeItem('userEmail');
+    localStorage.removeItem('userName');
     localStorage.removeItem('srm_ap_session');
     navigate('/');
   };
@@ -84,12 +99,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const showExpandedContent = !isCollapsed || isMobileOpen;
 
   const getUserDisplayName = () => {
+    const storedName = localStorage.getItem('userName');
+    if (storedName) return storedName;
     if (userRole === 'admin') return 'System Administrator';
+    if (userRole === 'approver') return 'Corporate Approver';
     return 'Demo User';
   };
 
   const getUserInitials = () => {
-    if (userRole === 'admin') return 'SA';
+    if (userRole === 'admin') return 'DA';
+    if (userRole === 'approver') return 'AP';
     return 'DU';
   };
 
@@ -250,12 +269,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {showExpandedContent && (
                     <>
                       <span className="truncate flex-1">{item.title}</span>
-                      {item.title === 'Notifications' && unreadCount > 0 && (
+                      {(item.title === 'Notification' || item.title === 'Notifications') && unreadCount > 0 && (
                         <span className="ml-auto inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-rose-500 text-white min-w-4 h-4">
                           {unreadCount}
                         </span>
                       )}
-                      {item.title === 'Approval List' && pendingCount > 0 && (
+                      {(item.title === 'Approval List' || item.title === 'Approvals') && pendingCount > 0 && (
                         <span className="ml-auto inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-amber-500 text-white min-w-4 h-4">
                           {pendingCount}
                         </span>

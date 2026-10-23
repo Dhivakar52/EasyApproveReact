@@ -21,6 +21,7 @@ import type Nomination from "@/dataTypes/nomination";
 import type { NominationStatus } from "@/dataTypes/nomination";
 import { nominationService } from "@/services/nominationService";
 import type { UserRole } from "@/dataTypes/roles";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 
 interface NominationDetailsProps {
   isOpen: boolean;
@@ -30,13 +31,7 @@ interface NominationDetailsProps {
   onStatusUpdated?: () => void;
 }
 
-const statusBadgeColors: Partial<Record<NominationStatus, string>> = {
-  Pending: "bg-orange-100 text-orange-800 border-orange-200",
-  "In Review": "bg-blue-100 text-blue-800 border-blue-200",
-  "Under Review": "bg-yellow-100 text-yellow-800 border-yellow-200",
-  Approved: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  Rejected: "bg-red-100 text-red-800 border-red-200",
-};
+
 
 const NominationDetailsModal: React.FC<NominationDetailsProps> = ({
   isOpen,
@@ -101,13 +96,7 @@ const NominationDetailsModal: React.FC<NominationDetailsProps> = ({
                   <Dialog.Title className="text-base font-bold text-gray-900">
                     {nomination.id}
                   </Dialog.Title>
-                  <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
-                      statusBadgeColors[nomination.status] || "bg-gray-100 text-gray-800"
-                    }`}
-                  >
-                    {nomination.status}
-                  </span>
+                  <StatusBadge status={nomination.status} />
                 </div>
                 <p className="text-xs text-gray-500 truncate max-w-sm">
                   {nomination.title}
@@ -529,13 +518,7 @@ const NominationDetailsModal: React.FC<NominationDetailsProps> = ({
                     Current Approval Status
                   </h4>
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-bold border ${
-                        statusBadgeColors[nomination.status]
-                      }`}
-                    >
-                      {nomination.status}
-                    </span>
+                    <StatusBadge status={nomination.status} />
                     <span className="text-xs text-gray-500">
                       • Progress: {nomination.progress || "Stage 1"}
                     </span>

@@ -44,7 +44,8 @@ export const APPROVAL_TYPES = [
   'Other',
 ];
 
-export const BUDGET_OPTIONS = ['Yes', 'No', 'Partially'];
+export const BUDGET_OPTIONS = ['Yes', 'Partially', 'No'] as const;
+export type BudgetOption = typeof BUDGET_OPTIONS[number];
 
 export const formatINR = (val: number | string | undefined): string => {
   if (val === undefined || val === null || val === '') return '';
