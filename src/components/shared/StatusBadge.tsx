@@ -3,7 +3,6 @@ import type { Nomination } from "@/dataTypes/nomination";
 import {
   getStatusConfig,
   getStatusDisplayLabel,
-  getStandardStatusKey,
 } from "@/config/status.config";
 
 export interface StatusBadgeProps {

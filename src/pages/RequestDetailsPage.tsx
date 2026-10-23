@@ -333,8 +333,6 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
     req.status === "In Review" ||
     req.status === "Under Review" ||
     req.status === "PENDING APPROVAL";
-  const isApproved = req.status === "Approved";
-  const isRejected = req.status === "Rejected";
   const isClarify = req.status === "Clarification Required";
   const isUnderMod = req.status === "Under Modification";
   const isWithdrawn = req.status === "Withdrawn";

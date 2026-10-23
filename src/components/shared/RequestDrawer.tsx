@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   X,
-  Clock,
   CheckCircle2,
   XCircle,
   FileText,
@@ -15,7 +14,6 @@ import {
   Share2,
 } from 'lucide-react';
 import type Nomination from '@/dataTypes/nomination';
-import type { NominationStatus } from '@/dataTypes/nomination';
 import { nominationService } from '@/services/nominationService';
 import type { UserRole } from '@/dataTypes/roles';
 import { toast } from '@/components/ui/sonner';

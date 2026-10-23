@@ -10,6 +10,7 @@ export type TabKey =
   | "modify"
   | "approved"
   | "rejected"
+  | "withdrawn"
   | "reassigned";
 
 interface TabDef {

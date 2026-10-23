@@ -34,7 +34,7 @@ const getDaysLeft = (deadlineStr?: string) => {
   }
 };
 
-import { StatusBadge, renderStatusBadge } from "@/components/shared/StatusBadge";
+import { renderStatusBadge } from "@/components/shared/StatusBadge";
 export { renderStatusBadge };
 
 const NominationTable: React.FC<NominationTableProps> = ({
