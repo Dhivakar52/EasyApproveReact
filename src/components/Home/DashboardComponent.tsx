@@ -1,41 +1,54 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { ColumnDef } from '@tanstack/react-table';
 import {
   FileText,
   Clock,
   CheckCircle2,
   XCircle,
-  PlusCircle,
   ChevronRight,
-  Eye,
-  ShieldAlert,
-  ArrowUpRight,
+  AlertTriangle,
+  Send,
 } from 'lucide-react';
 import { nominationService } from '@/services/nominationService';
 import type Nomination from '@/dataTypes/nomination';
 import type { UserRole } from '@/dataTypes/roles';
-import RequestDrawer from '@/components/shared/RequestDrawer';
+import { DataTable } from '@/common/Datatable';
 import { ActionMenu } from '@/common/ActionMenu';
 import { formatDateDDMMYYYY, parseDate } from '@/lib/utils';
-import { renderStatusBadge } from '@/components/NominationContent/NominationTable';
+import { renderStatusBadge } from '@/components/shared/StatusBadge';
+import { toast } from '@/components/ui/sonner';
+
+const getDaysLeft = (deadlineStr?: string) => {
+  if (!deadlineStr) return 5;
+  try {
+    const target = new Date(deadlineStr);
+    target.setHours(0, 0, 0, 0);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return Math.round((target.getTime() - now.getTime()) / 864e5);
+  } catch {
+    return 5;
+  }
+};
 
 export const DashboardComponent: React.FC = () => {
   const navigate = useNavigate();
   const [nominations, setNominations] = useState<Nomination[]>(() =>
     nominationService.getNominations()
   );
-  const [selectedRequest, setSelectedRequest] = useState<Nomination | null>(null);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Pagination for Overdue Requests Table (5 records per page)
+  const [overduePage] = useState(1);
+  const overduePageSize = 5;
+
+  // Pagination and search for My Requests Table (5 records per page)
+  const [myRequestsPage] = useState(1);
+  const [myRequestsSearch] = useState('');
+  const myRequestsPageSize = 5;
 
   const userRole = ((localStorage.getItem('userRole') || 'user').toLowerCase() as UserRole);
   const userEmail = (localStorage.getItem('userEmail') || 'user@srmtech.com').toLowerCase().trim();
-  const userName =
-    localStorage.getItem('userName') ||
-    (userRole === 'admin'
-      ? 'Demo Admin'
-      : userRole === 'approver'
-        ? 'Demo Approver'
-        : 'Demo User');
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -57,10 +70,17 @@ export const DashboardComponent: React.FC = () => {
       return nominations.filter((r) => {
         const appEmail = (r.approverEmail || r.managerEmail || '').toLowerCase().trim();
         const appName = (r.approverName || r.assignedEmployee || '').toLowerCase().trim();
-        return (
+        const isApprover =
           appEmail === userEmail ||
-          (userEmail.includes('approver') && (appName.includes('approver') || appName.includes('karthik') || appEmail.includes('approver')))
+          (userEmail.includes('approver') &&
+            (appName.includes('approver') || appName.includes('karthik') || appEmail.includes('approver')));
+        const isReassignedToUser = (r.reassignments || []).some(
+          (re) => re.toEmail?.toLowerCase().trim() === userEmail
         );
+        const isHistoryNewOwner = (r.reassignmentHistory || []).some(
+          (rh) => rh.newOwner?.toLowerCase().trim() === userEmail
+        );
+        return isApprover || isReassignedToUser || isHistoryNewOwner;
       });
     }
 
@@ -77,7 +97,175 @@ export const DashboardComponent: React.FC = () => {
     });
   }, [nominations, userRole, userEmail]);
 
-  // Statistics tailored by role
+  // Current date for deadline calculations
+  const now = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  // -------------------------------------------------------------
+  // Table 1: Overdue Requests
+  // - Displays overdue requests only (no upcoming deadlines or non-overdue requests).
+  // - Pending requests whose deadlines have passed (daysLeft < 0).
+  // - Excludes approved, rejected, cancelled, and other completed requests.
+  // - Sorted by oldest deadline first (most overdue first: -5, -3, -2, -1).
+  // - 5 records per page, with pagination enabled.
+  // - Add button removed.
+  // -------------------------------------------------------------
+  const overdueRequests = useMemo(() => {
+    return roleNominations
+      .filter((n) => {
+        if (!n.deadline) return false;
+        const st = (n.status || '').toLowerCase().trim();
+        // Exclude completed, approved, rejected, cancelled, and withdrawn requests
+        if (
+          st === 'approved' ||
+          st === 'rejected' ||
+          st === 'completed' ||
+          st === 'cancelled' ||
+          st.includes('withdraw')
+        ) {
+          return false;
+        }
+        const d = parseDate(n.deadline);
+        if (!d) return false;
+        const diffMs = d.getTime() - now.getTime();
+        const daysLeft = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        return daysLeft < 0; // Overdue requests only!
+      })
+      .map((n) => {
+        const d = parseDate(n.deadline);
+        const diffMs = d ? d.getTime() - now.getTime() : 0;
+        const daysLeft = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        return { ...n, daysLeft };
+      })
+      .sort((a, b) => a.daysLeft - b.daysLeft); // Oldest deadline first
+  }, [roleNominations, now]);
+
+  const paginatedOverdueRequests = useMemo(() => {
+    const start = (overduePage - 1) * overduePageSize;
+    return overdueRequests.slice(start, start + overduePageSize);
+  }, [overdueRequests, overduePage, overduePageSize]);
+
+  // -------------------------------------------------------------
+  // Table 2: My Requests (Overdue Requests Only)
+  // - Displays overdue requests only in this table.
+  // - Maximum of 5 records per page with pagination enabled.
+  // - Displays only requests created by the logged-in user.
+  // - Includes only pending requests whose deadlines have already passed.
+  // - Excludes approved, rejected, withdrawn, cancelled, and other completed requests.
+  // - Sorted by oldest overdue deadline first.
+  // - Displays "No overdue requests." if no matching records exist.
+  // -------------------------------------------------------------
+  const myRequests = useMemo(() => {
+    // 1. Filter only requests created by the logged-in user
+    const userCreated = nominations.filter((r) => {
+      const reqEmail = (r.requesterEmail || r.nomineeEmail || '').toLowerCase().trim();
+      const origSubmitter = (r.originalSubmitter || '').toLowerCase().trim();
+      const reqName = (r.requesterName || r.nominee || '').toLowerCase().trim();
+
+      if (reqEmail === userEmail || origSubmitter === userEmail) return true;
+
+      if (
+        userEmail === 'user@srmtech.com' ||
+        userEmail === 'user@gmail.com' ||
+        userEmail.startsWith('user@')
+      ) {
+        return (
+          reqEmail === 'user@srmtech.com' ||
+          reqEmail === 'user@gmail.com' ||
+          origSubmitter === 'user@srmtech.com' ||
+          origSubmitter === 'user@gmail.com' ||
+          reqName === 'demo user' ||
+          reqName === 'user'
+        );
+      }
+
+      if (
+        userEmail === 'approver@srmtech.com' ||
+        userEmail === 'approver@gmail.com' ||
+        userEmail.startsWith('approver@')
+      ) {
+        return (
+          reqEmail === 'approver@srmtech.com' ||
+          reqEmail === 'approver@gmail.com' ||
+          origSubmitter === 'approver@srmtech.com' ||
+          origSubmitter === 'approver@gmail.com' ||
+          reqName === 'demo approver' ||
+          reqName === 'approver'
+        );
+      }
+
+      if (
+        userEmail === 'admin@srmtech.com' ||
+        userEmail === 'admin@gmail.com' ||
+        userEmail.startsWith('admin@')
+      ) {
+        return (
+          reqEmail === 'admin@srmtech.com' ||
+          reqEmail === 'admin@gmail.com' ||
+          origSubmitter === 'admin@srmtech.com' ||
+          origSubmitter === 'admin@gmail.com' ||
+          reqName === 'demo admin' ||
+          reqName === 'admin'
+        );
+      }
+
+      return false;
+    });
+
+    // 2. Filter for overdue pending requests only
+    return userCreated
+      .filter((n) => {
+        if (!n.deadline) return false;
+        const st = (n.status || '').toLowerCase().trim();
+        // Exclude approved, rejected, withdrawn, cancelled, and other completed requests
+        if (
+          st === 'approved' ||
+          st === 'rejected' ||
+          st === 'completed' ||
+          st === 'cancelled' ||
+          st.includes('withdraw')
+        ) {
+          return false;
+        }
+
+        const d = parseDate(n.deadline);
+        if (!d) return false;
+        const diffMs = d.getTime() - now.getTime();
+        const daysLeft = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        return daysLeft < 0; // Overdue requests only!
+      })
+      .map((n) => {
+        const d = parseDate(n.deadline);
+        const diffMs = d ? d.getTime() - now.getTime() : 0;
+        const daysLeft = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        return { ...n, daysLeft };
+      })
+      .sort((a, b) => a.daysLeft - b.daysLeft); // Oldest overdue deadline first
+  }, [nominations, userEmail, now]);
+
+  const filteredMyRequests = useMemo(() => {
+    const q = myRequestsSearch.trim().toLowerCase();
+    if (!q) return myRequests;
+    return myRequests.filter(
+      (r) =>
+        (r.title && r.title.toLowerCase().includes(q)) ||
+        (r.number && r.number.toLowerCase().includes(q)) ||
+        (r.id && r.id.toLowerCase().includes(q)) ||
+        (r.approverName && r.approverName.toLowerCase().includes(q)) ||
+        (r.type && r.type.toLowerCase().includes(q)) ||
+        (r.department && r.department.toLowerCase().includes(q))
+    );
+  }, [myRequests, myRequestsSearch]);
+
+  const paginatedMyRequests = useMemo(() => {
+    const start = (myRequestsPage - 1) * myRequestsPageSize;
+    return filteredMyRequests.slice(start, start + myRequestsPageSize);
+  }, [filteredMyRequests, myRequestsPage, myRequestsPageSize]);
+
+  // Overall Statistics for Dashboard Metric Cards
   const totalCount = roleNominations.length;
   const pendingCount = roleNominations.filter(
     (n) => n.status === 'Pending' || n.status === 'In Review' || n.status === 'Under Review'
@@ -87,90 +275,231 @@ export const DashboardComponent: React.FC = () => {
     (n) => n.status === 'Rejected' || (n.status as string) === 'REJECTED'
   ).length;
 
-  // Deadline statistics
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-
-  const requestsWithDeadlines = useMemo(() => {
-    return roleNominations
-      .filter((n) => Boolean(n.deadline) && n.status !== 'Approved' && n.status !== 'Rejected' && (n.status as string) !== 'Withdrawn')
-      .map((n) => {
-        const d = parseDate(n.deadline);
-        const diffMs = d ? d.getTime() - now.getTime() : 0;
-        const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-        return { ...n, daysLeft };
-      })
-      .sort((a, b) => a.daysLeft - b.daysLeft);
-  }, [roleNominations]);
-
-  const overdueCount = requestsWithDeadlines.filter((r) => r.daysLeft < 0).length;
-  const dueSoonCount = requestsWithDeadlines.filter((r) => r.daysLeft >= 0 && r.daysLeft <= 3).length;
-
-  // Recent workflow requests
-  const recentRequests = useMemo(() => {
-    return roleNominations.slice(0, 6);
-  }, [roleNominations]);
-
-  const handleOpenDetails = (req: Nomination) => {
-    setSelectedRequest(req);
-    setIsDrawerOpen(true);
+  const handleOpenDetails = (r: Nomination) => {
+    try {
+      sessionStorage.setItem(
+        'ea_nav_source',
+        JSON.stringify({ page: 'dashboard', label: 'Dashboard', url: '/home' })
+      );
+    } catch {
+      // Ignore storage errors
+    }
+    navigate(`/my-nominations/${r.number || r.id}`);
   };
 
-  const getRoleBadge = () => {
-    if (userRole === 'admin') return 'Executive Workspace · System Administrator';
-    if (userRole === 'approver') return 'Approver Desk · Corporate Sign-Off Authority';
-    return 'Requester Portal · Employee Workspace';
+  const handleRemindApprover = (r: Nomination) => {
+    nominationService.wfRemind(r.id);
+    toast.success(
+      `Reminder sent to ${r.approverName || r.assignedEmployee || 'Approver'
+      } for request ${r.number || r.id}.`
+    );
   };
+
+  const handleModifyRequest = (r: Nomination) => {
+    try {
+      sessionStorage.setItem(
+        'ea_nav_source',
+        JSON.stringify({ page: 'dashboard', label: 'Dashboard', url: '/home' })
+      );
+    } catch {
+      // Ignore storage errors
+    }
+    navigate(`/modify/${r.number || r.id}`);
+  };
+
+  const handleWithdrawRequest = (r: Nomination) => {
+    const res = nominationService.wfWithdraw(
+      r.id,
+      'Withdrawn by requester from Dashboard',
+      r.nominee || 'Requester'
+    );
+    if (res.success) {
+      toast.warning(`Request ${r.number || r.id} has been withdrawn.`);
+      setNominations(nominationService.getNominations());
+    } else {
+      toast.error(res.error || 'Withdrawal failed.');
+    }
+  };
+
+  // Reusable columns definition matching My Requests:
+  // ID -> Title -> Type -> Requester Org -> Requested By -> Approver -> Submission Date -> Deadline -> Status -> Actions
+  const columns = useMemo<ColumnDef<Nomination>[]>(
+    () => [
+      {
+        accessorKey: 'number',
+        header: 'ID',
+        cell: ({ row }) => {
+          const r = row.original;
+          return (
+            <button
+              type="button"
+              className="link mono font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
+              onClick={() => handleOpenDetails(r)}
+              title="View complete details"
+            >
+              {r.number || r.id}
+            </button>
+          );
+        },
+      },
+      {
+        accessorKey: 'title',
+        header: 'Title',
+        cell: ({ row }) => (
+          <div className="font-semibold text-slate-800" style={{ minWidth: '11rem' }}>
+            {row.original.title}
+          </div>
+        ),
+      },
+      {
+        accessorKey: 'type',
+        header: 'Type',
+        cell: ({ row }) => {
+          const r = row.original;
+          return (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
+              {r.type || r.category || '—'}
+            </span>
+          );
+        },
+      },
+      {
+        id: 'requesterOrg',
+        header: 'Requester Org',
+        cell: ({ row }) => {
+          const r = row.original;
+          return (
+            <span className="text-xs text-slate-700 font-medium">
+              {r.department || r.entity || 'SRM Tech'}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: 'requesterName',
+        header: 'Requested By',
+        cell: ({ row }) => {
+          const r = row.original;
+          return (
+            <div className="font-medium text-slate-800">
+              {r.requesterName || r.nominee || 'Demo User'}
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: 'approverName',
+        header: 'Approver',
+        cell: ({ row }) => {
+          const r = row.original;
+          return (
+            <div className="font-medium text-slate-800">
+              {r.approverName || r.assignedEmployee || 'Approver'}
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: 'createdAt',
+        header: 'Submission Date',
+        cell: ({ row }) => (
+          <span className="font-mono text-xs text-slate-600 whitespace-nowrap">
+            {formatDateDDMMYYYY(row.original.createdAt || row.original.submittedDate)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'deadline',
+        header: 'Deadline',
+        cell: ({ row }) => {
+          const r = row.original;
+          const days = getDaysLeft(r.deadline);
+          const isOverdue = days < 0;
+          const isDueSoon = days >= 0 && days <= 3;
+          return (
+            <div className="whitespace-nowrap">
+              <div className="font-medium text-slate-700">{formatDateDDMMYYYY(r.deadline)}</div>
+              {isOverdue && (
+                <div className="mt-1">
+                  <span className="chip chip-danger !text-[11px]">
+                    <i className="fa-solid fa-triangle-exclamation text-[10px]"></i> Overdue by{' '}
+                    {Math.abs(days)} d
+                  </span>
+                </div>
+              )}
+              {!isOverdue && isDueSoon && (
+                <div className="mt-1">
+                  <span className="chip chip-warn !text-[11px]">
+                    <i className="fa-solid fa-clock text-[10px]"></i>{' '}
+                    {days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : `Due in ${days} d`}
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: 'status',
+        header: 'Status',
+        cell: ({ row }) => renderStatusBadge(row.original),
+      },
+      {
+        id: 'actions',
+        header: 'Actions',
+        cell: ({ row }) => {
+          const r = row.original;
+          const isPending =
+            r.status === 'Pending' || r.status === 'In Review' || r.status === 'Under Review';
+          const canWithdraw =
+            r.status !== 'Approved' && r.status !== 'Rejected' && (r.status as string) !== 'Withdrawn';
+
+          return (
+            <div className="flex items-center justify-center w-full">
+              <ActionMenu
+                item={r}
+                actions={[
+                  {
+                    label: 'View Details',
+                    icon: <i className="fa-solid fa-eye text-blue-600 mr-2"></i>,
+                    onClick: () => handleOpenDetails(r),
+                  },
+                  ...(isPending
+                    ? [
+                      {
+                        label: 'Remind Approver',
+                        icon: <i className="fa-regular fa-bell text-slate-500 mr-2"></i>,
+                        onClick: () => handleRemindApprover(r),
+                      },
+                    ]
+                    : []),
+                  {
+                    label: 'Modify Request',
+                    icon: <i className="fa-solid fa-pen-to-square text-blue-500 mr-2"></i>,
+                    onClick: () => handleModifyRequest(r),
+                  },
+                  ...(canWithdraw
+                    ? [
+                      {
+                        label: 'Withdraw Request',
+                        icon: <i className="fa-solid fa-ban text-rose-500 mr-2"></i>,
+                        variant: 'danger' as const,
+                        onClick: () => handleWithdrawRequest(r),
+                      },
+                    ]
+                    : []),
+                ]}
+              />
+            </div>
+          );
+        },
+      },
+    ],
+    []
+  );
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
-      {/* Top Banner / Welcome Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-              {getRoleBadge()}
-            </span>
-            <span className="text-xs text-slate-400 font-medium">
-              &bull; {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-            </span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mt-1">
-            Welcome back, {userName}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            {userRole === 'admin'
-              ? 'Complete enterprise governance suite. Monitor cross-organizational requests, sign-offs, and compliance.'
-              : userRole === 'approver'
-                ? 'Review pending corporate expenditures, clarify requirements, and execute formal decisions.'
-                : 'Submit approval requests, track sign-off progression, and coordinate with approvers.'}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          {userRole !== 'approver' && (
-            <button
-              type="button"
-              onClick={() => navigate('/self-nominations')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs shadow-md shadow-emerald-700/20 transition cursor-pointer"
-            >
-              <PlusCircle size={15} />
-              <span>Create Request</span>
-            </button>
-          )}
-          {userRole !== 'user' && (
-            <button
-              type="button"
-              onClick={() => navigate('/approvals')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs shadow-xs transition cursor-pointer"
-            >
-              <span>Review Approvals</span>
-              <ArrowUpRight size={14} className="text-slate-400" />
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Total Requests */}
@@ -226,160 +555,122 @@ export const DashboardComponent: React.FC = () => {
         </div>
       </div>
 
-      {/* Deadline & SLA Warning Banner */}
-      {(overdueCount > 0 || dueSoonCount > 0) && (
-        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
-              <ShieldAlert size={18} />
+
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
+              <AlertTriangle size={17} />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-900">
-                Deadline Alerts: {overdueCount > 0 && <span className="text-rose-700 font-extrabold">{overdueCount} overdue</span>}
-                {overdueCount > 0 && dueSoonCount > 0 && ' and '}
-                {dueSoonCount > 0 && <span className="text-amber-800 font-extrabold">{dueSoonCount} due within 72 hours</span>}
-              </h3>
-              <p className="text-xs text-slate-600 mt-0.5">
-                Review upcoming deadline milestones to maintain SLA compliance and prevent escalations.
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-base font-bold text-slate-900">Approval Requests</h2>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                  {overdueRequests.length} Overdue
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Pending requests whose deadlines have passed, sorted by oldest deadline first.
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => navigate(userRole === 'approver' ? '/approvals' : '/my-nominations')}
-            className="px-4 py-2 rounded-lg bg-white border border-amber-300 text-amber-900 hover:bg-amber-100/60 font-semibold text-xs shadow-xs transition cursor-pointer self-start sm:self-auto shrink-0"
-          >
-            {userRole === 'approver' ? 'Review Approvals →' : 'View My Requests →'}
-          </button>
-        </div>
-      )}
 
-
-
-      {/* Recent Submissions Table & Activity Overview */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">
-              {userRole === 'admin'
-                ? 'Enterprise Workflow Requests'
-                : userRole === 'approver'
-                  ? 'Assigned Approval Queue'
-                  : 'My Recent Requests'}
-            </h2>
-            <p className="text-xs text-slate-500">
-              {userRole === 'admin'
-                ? 'Complete live feed across all departments and entities'
-                : userRole === 'approver'
-                  ? 'Requests awaiting your review and active sign-off actions'
-                  : 'Recent submissions and their multi-stage status progress'}
-            </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => navigate(userRole === 'approver' ? '/approvals' : '/my-nominations')}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition flex items-center gap-1 cursor-pointer"
+            >
+              <span>{userRole === 'approver' ? 'View All Approvals' : 'View All Requests'}</span>
+              <ChevronRight size={14} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => navigate(userRole === 'approver' ? '/approvals' : '/my-nominations')}
-            className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 transition flex items-center gap-1 cursor-pointer"
-          >
-            <span>{userRole === 'approver' ? 'View All Approvals' : 'View All Requests'}</span>
-            <ChevronRight size={14} />
-          </button>
         </div>
 
-        <div className="overflow-x-auto">
-          {recentRequests.length === 0 ? (
-            <div className="py-12 text-center text-xs text-slate-400">
-              <FileText className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-              <span>No requests currently found in this view.</span>
-            </div>
-          ) : (
-            <table className="w-full text-left text-xs divide-y divide-slate-200">
-              <thead className="bg-slate-50/80 text-slate-500 font-semibold uppercase tracking-wider text-[11px]">
-                <tr>
-                  <th className="px-4 py-3.5 whitespace-nowrap">ID</th>
-                  <th className="px-4 py-3.5 whitespace-nowrap">Title</th>
-                  <th className="px-4 py-3.5 whitespace-nowrap">Type</th>
-                  <th className="px-4 py-3.5 whitespace-nowrap">Requester Org</th>
-                  <th className="px-4 py-3.5 whitespace-nowrap">Requested By</th>
-                  <th className="px-4 py-3.5 whitespace-nowrap">Approver</th>
-                  <th className="px-4 py-3.5 whitespace-nowrap">Submission Date</th>
-                  <th className="px-4 py-3.5 whitespace-nowrap">Deadline</th>
-                  <th className="px-4 py-3.5 whitespace-nowrap">Status</th>
-                  <th className="px-4 py-3.5 text-center !w-24 !min-w-[96px] !max-w-[96px] actions-col">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {recentRequests.map((req) => {
-                  return (
-                    <tr key={req.id} className="hover:bg-slate-50/80 transition">
-                      <td className="px-4 py-3.5 font-mono font-bold text-slate-900 whitespace-nowrap">
-                        <button
-                          type="button"
-                          className="link mono font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
-                          onClick={() => handleOpenDetails(req)}
-                          title="View complete details"
-                        >
-                          {req.number || req.id}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3.5 font-semibold text-slate-800" style={{ minWidth: "11rem" }}>
-                        {req.title}
-                      </td>
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
-                          {req.type || req.category || "—"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-xs text-slate-700 font-medium whitespace-nowrap">
-                        {req.department || req.entity || "SRM Tech"}
-                      </td>
-                      <td className="px-4 py-3.5 font-medium text-slate-800 whitespace-nowrap">
-                        {req.requesterName || req.nominee || "Demo User"}
-                      </td>
-                      <td className="px-4 py-3.5 font-medium text-slate-800 whitespace-nowrap">
-                        {req.approverName || req.assignedEmployee || "Approver"}
-                      </td>
-                      <td className="px-4 py-3.5 font-mono text-xs text-slate-600 whitespace-nowrap">
-                        {formatDateDDMMYYYY(req.createdAt || req.submittedDate)}
-                      </td>
-                      <td className="px-4 py-3.5 font-medium text-slate-700 whitespace-nowrap">
-                        {req.deadline ? formatDateDDMMYYYY(req.deadline) : "—"}
-                      </td>
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        {renderStatusBadge(req)}
-                      </td>
-                      <td className="px-4 py-3.5 text-center align-middle !w-24 !min-w-[96px] !max-w-[96px] actions-col">
-                        <div className="flex items-center justify-center w-full">
-                          <ActionMenu
-                            item={req}
-                            actions={[
-                              {
-                                label: "View Details",
-                                icon: <Eye className="w-4 h-4 text-blue-600 mr-2" />,
-                                onClick: () => handleOpenDetails(req),
-                              },
-                            ]}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
+        <DataTable
+          columns={columns}
+          data={paginatedOverdueRequests}
+          emptyMessage="No overdue requests."
+          tableClassName="tbl"
+          headerClassName="bg-[#0B132B]"
+          headCellClassName="text-xs font-semibold text-white tracking-normal py-3.5 px-4"
+          cellClassName="py-3.5 px-4 text-xs border-b border-slate-100"
+          rowClassName="hover:bg-slate-50/80 transition"
+        />
+
+        {/* <Pagination
+          currentPage={overduePage}
+          pageSize={overduePageSize}
+          totalRecords={overdueRequests.length}
+          onPageChange={setOverduePage}
+        /> */}
       </div>
 
-      {/* Slide-in Drawer */}
-      <RequestDrawer
-        isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
-        nomination={selectedRequest}
-        onStatusUpdated={() => setNominations(nominationService.getNominations())}
-      />
+
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <Send size={17} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-base font-bold text-slate-900">My Requests</h2>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                  {myRequests.length} Overdue
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Pending requests created by you whose deadlines have passed, sorted by oldest deadline first.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 w-3.5 h-3.5 pointer-events-none" />
+              <input
+                type="text"
+                value={myRequestsSearch}
+                onChange={(e) => {
+                  setMyRequestsSearch(e.target.value);
+                  setMyRequestsPage(1);
+                }}
+                placeholder="Search my requests..."
+                className="pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 w-44 sm:w-56 transition"
+              />
+            </div> */}
+            <button
+              type="button"
+              onClick={() => navigate('/my-nominations')}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition flex items-center gap-1 cursor-pointer"
+            >
+              <span>View All Requests</span>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+
+        <DataTable
+          columns={columns}
+          data={paginatedMyRequests}
+          emptyMessage="No overdue requests."
+          tableClassName="tbl"
+          headerClassName="bg-[#0B132B]"
+          headCellClassName="text-xs font-semibold text-white tracking-normal py-3.5 px-4"
+          cellClassName="py-3.5 px-4 text-xs border-b border-slate-100"
+          rowClassName="hover:bg-slate-50/80 transition"
+        />
+
+        {/* <Pagination
+          currentPage={myRequestsPage}
+          pageSize={myRequestsPageSize}
+          totalRecords={filteredMyRequests.length}
+          onPageChange={setMyRequestsPage}
+        /> */}
+      </div>
     </div>
   );
 };
 
 export default DashboardComponent;
-

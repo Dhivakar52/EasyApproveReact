@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ColumnDef } from "@tanstack/react-table";
-import { UserCheck, Eye } from "lucide-react";
+import { UserCheck, Eye, CheckCircle2, HelpCircle, UserPlus, XCircle, X } from "lucide-react";
 import type Nomination from "@/dataTypes/nomination";
+import type { SupportingDocument } from "@/dataTypes/nomination";
 import { nominationService } from "@/services/nominationService";
+import { ActionAttachmentSection } from "@/components/shared/ActionAttachmentSection";
 import { DataTable } from "@/common/Datatable";
 import { Pagination } from "@/common/Pagination";
 import { TableSearch } from "@/common/TableSearch";
@@ -13,6 +15,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { exportToCsv, formatDateDDMMYYYY, parseDate } from "@/lib/utils";
 import { toast } from "@/components/ui/sonner";
 import { renderStatusBadge } from "@/components/NominationContent/NominationTable";
+import { GROUPS, approversByGroup, getMinDeadlineDate } from "@/config/approval.config";
 
 const formatDate = (s?: string | number) => {
   return formatDateDDMMYYYY(s);
@@ -78,6 +81,201 @@ const ApprovalComponent: React.FC = () => {
 
   const userRole = (localStorage.getItem("userRole") || "user").toLowerCase();
   const userEmail = (localStorage.getItem("userEmail") || "user@srmtech.com").toLowerCase().trim();
+  const currentUserName =
+    localStorage.getItem("userName") ||
+    (userEmail.includes("approver")
+      ? "Demo Approver"
+      : userEmail.includes("admin")
+      ? "Demo Admin"
+      : "Reviewer");
+
+  // Approver Action Modals State
+  const [activeModal, setActiveModal] = useState<"approve" | "clarify" | "reassign" | "reject" | null>(null);
+  const [selectedRequest, setSelectedRequest] = useState<Nomination | null>(null);
+
+  // Approve State
+  const [approveRemarks, setApproveRemarks] = useState("Approved as per departmental workflow policy.");
+  const [approveError, setApproveError] = useState("");
+  const [approveFiles, setApproveFiles] = useState<SupportingDocument[]>([]);
+  const [isSubmittingApprove, setIsSubmittingApprove] = useState(false);
+
+  // Clarify State
+  const [clarifyInquiry, setClarifyInquiry] = useState("");
+  const [clarifyComments, setClarifyComments] = useState("");
+  const [clarifyError, setClarifyError] = useState("");
+  const [clarifyFiles, setClarifyFiles] = useState<SupportingDocument[]>([]);
+  const [isSubmittingClarify, setIsSubmittingClarify] = useState(false);
+
+  // Reassign State
+  const [reassignGroup, setReassignGroup] = useState("");
+  const [reassignEmail, setReassignEmail] = useState("");
+  const [reassignName, setReassignName] = useState("");
+  const [reassignDeadline, setReassignDeadline] = useState(getMinDeadlineDate(3));
+  const [reassignReason, setReassignReason] = useState("");
+  const [reassignFiles, setReassignFiles] = useState<SupportingDocument[]>([]);
+  const [reassignErrors, setReassignErrors] = useState<Record<string, string>>({});
+  const [isSubmittingReassign, setIsSubmittingReassign] = useState(false);
+
+  // Reject State
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectError, setRejectError] = useState("");
+  const [rejectFiles, setRejectFiles] = useState<SupportingDocument[]>([]);
+  const [isSubmittingReject, setIsSubmittingReject] = useState(false);
+
+  // Action Triggers
+  const handleOpenApprove = (r: Nomination) => {
+    setSelectedRequest(r);
+    setApproveRemarks("Approved as per departmental workflow policy.");
+    setApproveError("");
+    setApproveFiles([]);
+    setActiveModal("approve");
+  };
+
+  const handleConfirmApprove = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRequest) return;
+    if (!approveRemarks.trim()) {
+      setApproveError("Please enter approval remarks.");
+      return;
+    }
+    setIsSubmittingApprove(true);
+    const res = nominationService.wfApprove(selectedRequest.id, approveRemarks.trim(), currentUserName, approveFiles);
+    setIsSubmittingApprove(false);
+    if (res.success) {
+      setActiveModal(null);
+      toast.success("Approved");
+      setNominations(nominationService.getNominations());
+    } else {
+      setApproveError(res.error || "Approval failed.");
+    }
+  };
+
+  const handleOpenClarify = (r: Nomination) => {
+    setSelectedRequest(r);
+    setClarifyInquiry("");
+    setClarifyComments("");
+    setClarifyError("");
+    setClarifyFiles([]);
+    setActiveModal("clarify");
+  };
+
+  const handleConfirmClarify = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRequest) return;
+    if (!clarifyInquiry.trim()) {
+      setClarifyError("Please enter your clarification message.");
+      return;
+    }
+    setIsSubmittingClarify(true);
+    const res = nominationService.wfClarify(selectedRequest.id, clarifyInquiry.trim(), clarifyComments.trim(), currentUserName, clarifyFiles);
+    setIsSubmittingClarify(false);
+    if (res.success) {
+      setActiveModal(null);
+      toast.warning(`Clarification requested from ${selectedRequest.requesterName || selectedRequest.nominee || "requester"}.`);
+      setNominations(nominationService.getNominations());
+    } else {
+      setClarifyError(res.error || "Failed to submit clarification.");
+    }
+  };
+
+  const handleOpenReassign = (r: Nomination) => {
+    const currentCount = r.reassignCount ?? (r.reassignments ? r.reassignments.length : 0);
+    if (currentCount >= 2) {
+      toast.info("This request has already reached the maximum limit of 2 reassignments.");
+      return;
+    }
+    setSelectedRequest(r);
+    const initialGroup = r.entity || r.department || GROUPS[0] || "SRM Tech";
+    setReassignGroup(initialGroup);
+    const groupApprovers = approversByGroup[initialGroup] || [];
+    const defaultApprover = groupApprovers.find((a) => a.email.toLowerCase() !== userEmail) || groupApprovers[0];
+    setReassignEmail(defaultApprover ? defaultApprover.email : "");
+    setReassignName(defaultApprover ? defaultApprover.name : "");
+    setReassignDeadline(r.deadline || getMinDeadlineDate(3));
+    setReassignReason("");
+    setReassignErrors({});
+    setReassignFiles([]);
+    setActiveModal("reassign");
+  };
+
+  const handleReassignGroupChange = (grp: string) => {
+    setReassignGroup(grp);
+    const list = approversByGroup[grp] || [];
+    const first = list.find((a) => a.email.toLowerCase() !== userEmail) || list[0];
+    setReassignEmail(first ? first.email : "");
+    setReassignName(first ? first.name : "");
+    setReassignErrors((prev) => ({ ...prev, group: "", email: "" }));
+  };
+
+  const handleReassignEmailChange = (email: string) => {
+    setReassignEmail(email);
+    const list = approversByGroup[reassignGroup] || [];
+    const match = list.find((a) => a.email.toLowerCase() === email.toLowerCase());
+    setReassignName(match ? match.name : "");
+    setReassignErrors((prev) => ({ ...prev, email: "" }));
+  };
+
+  const handleConfirmReassign = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRequest) return;
+    const errs: Record<string, string> = {};
+    if (!reassignGroup) errs.group = "Please select an approver group.";
+    if (!reassignEmail) errs.email = "Please select an approver email.";
+    if (!reassignName) errs.name = "Approver name is required.";
+    if (!reassignDeadline) errs.deadline = "Please select a revised deadline date.";
+    if (!reassignReason.trim()) errs.reason = "Please enter a reassignment justification.";
+
+    if (Object.keys(errs).length > 0) {
+      setReassignErrors(errs);
+      return;
+    }
+
+    setIsSubmittingReassign(true);
+    const res = nominationService.wfReassign(selectedRequest.id, {
+      group: reassignGroup,
+      email: reassignEmail,
+      name: reassignName,
+      deadline: reassignDeadline,
+      reason: reassignReason.trim(),
+      files: reassignFiles,
+    }, currentUserName);
+    setIsSubmittingReassign(false);
+
+    if (res.success) {
+      setActiveModal(null);
+      toast.success(`Approval delegated to ${reassignName} (${res.nomination?.number || selectedRequest.id}).`);
+      setNominations(nominationService.getNominations());
+    } else {
+      setReassignErrors({ form: res.error || "Reassignment failed." });
+    }
+  };
+
+  const handleOpenReject = (r: Nomination) => {
+    setSelectedRequest(r);
+    setRejectReason("");
+    setRejectError("");
+    setRejectFiles([]);
+    setActiveModal("reject");
+  };
+
+  const handleConfirmReject = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRequest) return;
+    if (!rejectReason.trim()) {
+      setRejectError("Please provide a clear rejection reason.");
+      return;
+    }
+    setIsSubmittingReject(true);
+    const res = nominationService.wfReject(selectedRequest.id, rejectReason.trim(), rejectFiles, currentUserName);
+    setIsSubmittingReject(false);
+    if (res.success) {
+      setActiveModal(null);
+      toast.error(`Request ${selectedRequest.number || selectedRequest.id} has been rejected.`);
+      setNominations(nominationService.getNominations());
+    } else {
+      setRejectError(res.error || "Rejection failed.");
+    }
+  };
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -445,6 +643,20 @@ const ApprovalComponent: React.FC = () => {
         header: "Actions",
         cell: ({ row }) => {
           const r = row.original;
+          const s = ((r.status as string) || "").toLowerCase();
+          const isCompleted =
+            s === "approved" ||
+            s === "rejected" ||
+            s.includes("withdraw") ||
+            s === "completed";
+
+          const canPerformApproverActions =
+            (userRole === "approver" || userRole === "admin") && !isCompleted;
+
+          const reassignCount = r.reassignCount ?? (r.reassignments ? r.reassignments.length : 0);
+          const isReassignLimitReached = reassignCount >= 2;
+          const reassignLabel = `Re-assign (${reassignCount}/2)`;
+
           return (
             <div className="flex items-center justify-center w-full">
               <ActionMenu
@@ -455,6 +667,38 @@ const ApprovalComponent: React.FC = () => {
                     icon: <Eye className="w-4 h-4 text-blue-600 mr-2" />,
                     onClick: () => handleOpenDetails(r),
                   },
+                  ...(canPerformApproverActions
+                    ? [
+                        {
+                          label: "Approve",
+                          icon: <CheckCircle2 className="w-4 h-4 text-emerald-600 mr-2" />,
+                          onClick: () => handleOpenApprove(r),
+                        },
+                        {
+                          label: "Seek Clarification",
+                          icon: <HelpCircle className="w-4 h-4 text-amber-600 mr-2" />,
+                          onClick: () => handleOpenClarify(r),
+                        },
+                        {
+                          label: reassignLabel,
+                          icon: <UserPlus className="w-4 h-4 text-blue-600 mr-2" />,
+                          disabled: isReassignLimitReached,
+                          onClick: () => {
+                            if (isReassignLimitReached) {
+                              toast.info("This request has already reached the maximum limit of 2 reassignments.");
+                              return;
+                            }
+                            handleOpenReassign(r);
+                          },
+                        },
+                        {
+                          label: "Reject",
+                          icon: <XCircle className="w-4 h-4 text-rose-600 mr-2" />,
+                          variant: "danger" as const,
+                          onClick: () => handleOpenReject(r),
+                        },
+                      ]
+                    : []),
                 ]}
               />
             </div>
@@ -463,7 +707,7 @@ const ApprovalComponent: React.FC = () => {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [hasActiveFilters, activeFilterCount]
+    [hasActiveFilters, activeFilterCount, userRole, userEmail, currentUserName]
   );
 
   // Paginated slice for the table
@@ -549,6 +793,403 @@ const ApprovalComponent: React.FC = () => {
           </div>
         )}
       </section>
+
+      {/* ------------------------------------------------------------- */}
+      {/* Modal 1: Approve Request                                     */}
+      {/* ------------------------------------------------------------- */}
+      {activeModal === "approve" && selectedRequest && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Approve</h3>
+                  <p className="text-xs text-slate-500">
+                    Approve request {selectedRequest.number || selectedRequest.id}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmApprove} className="p-5 space-y-4 text-xs flex-1 overflow-y-auto flex flex-col">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1 shrink-0">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-bold text-blue-600">{selectedRequest.number || selectedRequest.id}</span>
+                  <span className="font-semibold text-slate-700">{selectedRequest.type || selectedRequest.category}</span>
+                </div>
+                <div className="text-slate-800 font-medium">{selectedRequest.title}</div>
+                <div className="text-slate-500 text-[11px]">
+                  Requester: <span className="font-medium text-slate-700">{selectedRequest.requesterName || selectedRequest.nominee}</span> ({selectedRequest.department || selectedRequest.entity})
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Approval Remarks / Audit Justification <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={approveRemarks}
+                  onChange={(e) => {
+                    setApproveRemarks(e.target.value);
+                    if (approveError) setApproveError("");
+                  }}
+                  placeholder="Enter approval justification remarks..."
+                  className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 transition resize-none"
+                />
+                {approveError && <p className="text-xs text-rose-600 mt-1">{approveError}</p>}
+              </div>
+
+              {/* Supporting Document Attachment */}
+              <ActionAttachmentSection
+                files={approveFiles}
+                onChange={setApproveFiles}
+                disabled={isSubmittingApprove}
+              />
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveModal(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingApprove}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isSubmittingApprove ? "Approving..." : "Approve"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* Modal 2: Seek Clarification                                   */}
+      {/* ------------------------------------------------------------- */}
+      {activeModal === "clarify" && selectedRequest && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                  <HelpCircle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Seek Clarification</h3>
+                  <p className="text-xs text-slate-500">
+                    Request information from {selectedRequest.requesterName || selectedRequest.nominee || "requester"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmClarify} className="p-5 space-y-4 text-xs flex-1 overflow-y-auto flex flex-col">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1 shrink-0">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-bold text-blue-600">{selectedRequest.number || selectedRequest.id}</span>
+                  <span className="font-semibold text-slate-700">{selectedRequest.type || selectedRequest.category}</span>
+                </div>
+                <div className="text-slate-800 font-medium">{selectedRequest.title}</div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Clarification Inquiry / Question <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={clarifyInquiry}
+                  onChange={(e) => {
+                    setClarifyInquiry(e.target.value);
+                    if (clarifyError) setClarifyError("");
+                  }}
+                  placeholder="Specify the clarification or documentation required..."
+                  className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-none focus:border-amber-600 focus:ring-2 focus:ring-amber-500/20 transition resize-none"
+                />
+                {clarifyError && <p className="text-xs text-rose-600 mt-1">{clarifyError}</p>}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Internal Review Notes (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={clarifyComments}
+                  onChange={(e) => setClarifyComments(e.target.value)}
+                  placeholder="Optional internal reviewer comments..."
+                  className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200 transition resize-none"
+                />
+              </div>
+
+              {/* Supporting Document Attachment */}
+              <ActionAttachmentSection
+                files={clarifyFiles}
+                onChange={setClarifyFiles}
+                disabled={isSubmittingClarify}
+              />
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveModal(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingClarify}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  <HelpCircle className="w-4 h-4" />
+                  <span>{isSubmittingClarify ? "Submitting..." : "Send Clarification Request"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* Modal 3: Re-assign (Delegation)                               */}
+      {/* ------------------------------------------------------------- */}
+      {activeModal === "reassign" && selectedRequest && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <UserPlus className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Re-assign Request (Delegation {selectedRequest.reassignCount || 0}/2)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Transfer approval responsibility to an authorized reviewer
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmReassign} className="p-5 space-y-4 text-xs flex-1 overflow-y-auto flex flex-col">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1 shrink-0">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-bold text-blue-600">{selectedRequest.number || selectedRequest.id}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
+                    Quota: {selectedRequest.reassignCount || 0}/2 Used
+                  </span>
+                </div>
+                <div className="text-slate-800 font-medium">{selectedRequest.title}</div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Approver Group <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={reassignGroup}
+                  onChange={(e) => handleReassignGroupChange(e.target.value)}
+                  className="w-full text-xs py-2 px-3 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 transition"
+                >
+                  {GROUPS.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
+                {reassignErrors.group && <p className="text-xs text-rose-600 mt-1">{reassignErrors.group}</p>}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Assign To Reviewer <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={reassignEmail}
+                  onChange={(e) => handleReassignEmailChange(e.target.value)}
+                  className="w-full text-xs py-2 px-3 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 transition"
+                >
+                  {(approversByGroup[reassignGroup] || []).map((a) => (
+                    <option key={a.email} value={a.email}>
+                      {a.name} ({a.email})
+                    </option>
+                  ))}
+                </select>
+                {reassignErrors.email && <p className="text-xs text-rose-600 mt-1">{reassignErrors.email}</p>}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Revised Decision Deadline <span className="text-rose-500">*</span>
+                </label>
+                <DatePicker
+                  value={reassignDeadline}
+                  onChange={setReassignDeadline}
+                  placeholder="Select revised deadline"
+                />
+                {reassignErrors.deadline && <p className="text-xs text-rose-600 mt-1">{reassignErrors.deadline}</p>}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Delegation Reason / Handover Note <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={reassignReason}
+                  onChange={(e) => {
+                    setReassignReason(e.target.value);
+                    if (reassignErrors.reason) setReassignErrors((prev) => ({ ...prev, reason: "" }));
+                  }}
+                  placeholder="Explain why this request is being reassigned..."
+                  className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 transition resize-none"
+                />
+                {reassignErrors.reason && <p className="text-xs text-rose-600 mt-1">{reassignErrors.reason}</p>}
+                {reassignErrors.form && <p className="text-xs text-rose-600 mt-1">{reassignErrors.form}</p>}
+              </div>
+
+              {/* Supporting Document Attachment */}
+              <ActionAttachmentSection
+                files={reassignFiles}
+                onChange={setReassignFiles}
+                disabled={isSubmittingReassign}
+              />
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveModal(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingReassign}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>{isSubmittingReassign ? "Delegating..." : "Confirm Re-assignment"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* Modal 4: Reject Request                                       */}
+      {/* ------------------------------------------------------------- */}
+      {activeModal === "reject" && selectedRequest && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                  <XCircle className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Reject Request</h3>
+                  <p className="text-xs text-slate-500">
+                    Decline approval for {selectedRequest.number || selectedRequest.id}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmReject} className="p-5 space-y-4 text-xs flex-1 overflow-y-auto flex flex-col">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1 shrink-0">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-bold text-blue-600">{selectedRequest.number || selectedRequest.id}</span>
+                  <span className="font-semibold text-slate-700">{selectedRequest.type || selectedRequest.category}</span>
+                </div>
+                <div className="text-slate-800 font-medium">{selectedRequest.title}</div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Rejection Reason <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={rejectReason}
+                  onChange={(e) => {
+                    setRejectReason(e.target.value);
+                    if (rejectError) setRejectError("");
+                  }}
+                  placeholder="Specify the reason why this request cannot be approved..."
+                  className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-none focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20 transition resize-none"
+                />
+                {rejectError && <p className="text-xs text-rose-600 mt-1">{rejectError}</p>}
+              </div>
+
+              {/* Supporting Document Attachment */}
+              <ActionAttachmentSection
+                files={rejectFiles}
+                onChange={setRejectFiles}
+                disabled={isSubmittingReject}
+              />
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveModal(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingReject}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>{isSubmittingReject ? "Rejecting..." : "Confirm Rejection"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

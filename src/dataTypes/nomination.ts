@@ -70,6 +70,7 @@ export interface ClarificationRecord {
   answeredAt?: number | null;
   revision?: number;
   comments?: string;
+  files?: SupportingDocument[];
 }
 
 export interface DecisionRecord {
@@ -80,7 +81,7 @@ export interface DecisionRecord {
   reason: string;
   approvalRef?: string;
   revision?: number;
-  files?: Array<{ name: string; size: number }>;
+  files?: Array<{ name: string; size: number; type?: string; dataUrl?: string }>;
 }
 
 export interface ReassignmentItem {
@@ -94,6 +95,7 @@ export interface ReassignmentItem {
   toGroup?: string;
   reason: string;
   deadline?: string;
+  files?: SupportingDocument[];
 }
 
 export interface RequestComment {

@@ -35,9 +35,9 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
       list.map((item, idx) => ({
         id: String(idx + 1),
         type:
-          item.type === "Nomination Approved"
+          item.type?.toLowerCase().includes("approved")
             ? "approved"
-            : item.type === "Nomination Approval Required"
+            : item.type?.toLowerCase().includes("approval")
             ? "approval"
             : "referral",
         title: item.title,

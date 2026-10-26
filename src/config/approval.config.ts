@@ -19,6 +19,7 @@ export const approversByGroup: Record<string, ApproverMember[]> = {
     { name: 'Ananya Shah', email: 'ananya.shah.global@example.com' },
   ],
   'SRM Tech': [
+    { name: 'Demo Approver', email: 'approver@srmtech.com' },
     { name: 'Karthik Subramanian', email: 'karthik.subramanian@srmtech.com' },
     { name: 'Demo Admin', email: 'admin@srmtech.com' },
     { name: 'Demo User', email: 'user@srmtech.com' },

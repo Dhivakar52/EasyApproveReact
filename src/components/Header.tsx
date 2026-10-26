@@ -4,14 +4,10 @@ import {
   PanelLeft,
   ChevronDown,
   LogOut,
-  User as UserIcon,
   Home as HomeIcon,
-  Search,
-  Send,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import NotificationModal from './Notification/NotificationModal';
-import EmailOutboxModal from './EmailOutboxModal';
 import type { UserRole } from '../dataTypes/roles';
 import { nominationService } from '../services/nominationService';
 
@@ -55,13 +51,10 @@ export const Header: React.FC<HeaderProps> = ({
   onMobileMenuToggle,
 }) => {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
-  const [isOutboxOpen, setIsOutboxOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [globalSearch, setGlobalSearch] = useState('');
   const [unreadCount, setUnreadCount] = useState(3);
 
   const profileRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -72,7 +65,7 @@ export const Header: React.FC<HeaderProps> = ({
     const updateCount = () => {
       try {
         const notifs = nominationService.getNotifications();
-        setUnreadCount(notifs.length > 0 ? notifs.length : 3);
+        setUnreadCount(notifs.filter((n) => !n.read).length);
       } catch (e) {
         console.error(e);
       }
@@ -83,20 +76,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   // Keyboard shortcut '/' to focus global search
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.key === '/' &&
-        document.activeElement?.tagName !== 'INPUT' &&
-        document.activeElement?.tagName !== 'TEXTAREA'
-      ) {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+
 
   // Close profile dropdown when clicking outside
   useEffect(() => {
@@ -142,13 +122,6 @@ export const Header: React.FC<HeaderProps> = ({
     return PAGE_TITLES[lastSeg] || 'Easy Approve';
   }, [location.pathname]);
 
-  const handleGlobalSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!globalSearch.trim()) return;
-    // Route to my-nominations with query or perform quick find
-    navigate(`/my-nominations?q=${encodeURIComponent(globalSearch.trim())}`);
-  };
-
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 sm:gap-4 border-b border-slate-200 bg-white/95 px-4 sm:px-6 shadow-xs select-none backdrop-blur-md">
       {/* Left side: Hamburger Toggle & Page Title */}
@@ -176,7 +149,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Right side: Global Search, Notification Bell, Email Outbox, Profile & Exit */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         {/* Quick Global Search */}
-        <form onSubmit={handleGlobalSearchSubmit} className="hidden md:flex items-center relative text-slate-400 focus-within:text-slate-600">
+        {/* <form onSubmit={handleGlobalSearchSubmit} className="hidden md:flex items-center relative text-slate-400 focus-within:text-slate-600">
           <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
           <input
             ref={searchInputRef}
@@ -186,7 +159,7 @@ export const Header: React.FC<HeaderProps> = ({
             placeholder="Quick find (Press / to search)..."
             className="w-48 lg:w-64 pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all text-slate-800 placeholder:text-slate-400"
           />
-        </form>
+        </form> */}
 
         {/* Notification Bell with Ping */}
         <button
@@ -205,7 +178,7 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Email Outbox & Notification Center */}
-        <button
+        {/* <button
           type="button"
           onClick={() => setIsOutboxOpen(true)}
           className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
@@ -216,7 +189,7 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white shadow-xs">
             3
           </span>
-        </button>
+        </button> */}
 
         {/* Separator */}
         <div className="h-5 w-px bg-slate-200 mx-1" />
@@ -267,7 +240,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>Executive Dashboard</span>
               </button>
 
-              <button
+              {/* <button
                 type="button"
                 onClick={() => {
                   setIsProfileOpen(false);
@@ -277,7 +250,7 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <UserIcon className="h-4 w-4 text-slate-500" />
                 <span>My Profile Card</span>
-              </button>
+              </button> */}
 
               <div className="my-1 border-t border-slate-100" />
 
@@ -312,10 +285,10 @@ export const Header: React.FC<HeaderProps> = ({
       />
 
       {/* Email Delivery Outbox Modal */}
-      <EmailOutboxModal
+      {/* <EmailOutboxModal
         isOpen={isOutboxOpen}
         onClose={() => setIsOutboxOpen(false)}
-      />
+      /> */}
     </header>
   );
 };

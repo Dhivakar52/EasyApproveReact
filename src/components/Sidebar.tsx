@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   LogOut,
   ChevronDown,
-  Search,
   X,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -29,7 +28,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const userEmail = localStorage.getItem('userEmail') || (userRole ? `${userRole}@srmtech.com` : 'user@srmtech.com');
   const baseMenu = getFilteredMenu(userRole);
 
-  const [search, setSearch] = useState('');
+  const [search] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(
     location.pathname.startsWith('/admin-setting') || location.pathname.startsWith('/profile-card')
   );
@@ -49,10 +48,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             (n) =>
               (n.status === 'Pending' || n.status === 'In Review' || n.status === 'Clarification Required') &&
               ((n.approverEmail?.toLowerCase() === cleanEmail) ||
-               (n.managerEmail?.toLowerCase() === cleanEmail) ||
-               (cleanEmail.includes('approver') && (n.approverName?.toLowerCase().includes('approver') || n.approverName?.toLowerCase().includes('karthik'))) ||
-               (n.reassignments || []).some((re) => re.toEmail?.toLowerCase().trim() === cleanEmail) ||
-               (n.reassignmentHistory || []).some((rh) => rh.newOwner?.toLowerCase().trim() === cleanEmail))
+                (n.managerEmail?.toLowerCase() === cleanEmail) ||
+                (cleanEmail.includes('approver') && (n.approverName?.toLowerCase().includes('approver') || n.approverName?.toLowerCase().includes('karthik'))) ||
+                (n.reassignments || []).some((re) => re.toEmail?.toLowerCase().trim() === cleanEmail) ||
+                (n.reassignmentHistory || []).some((rh) => rh.newOwner?.toLowerCase().trim() === cleanEmail))
           ).length;
         }
         setPendingCount(pending);
@@ -163,7 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Menu Search */}
-        {showExpandedContent && (
+        {/* {showExpandedContent && (
           <div className="px-3 pt-3 pb-1 shrink-0">
             <div className="relative flex items-center">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -185,7 +184,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               )}
             </div>
           </div>
-        )}
+        )} */}
 
         {/* Navigation Content */}
         <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
@@ -235,8 +234,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               to={sub.url}
                               onClick={onMobileClose}
                               className={`flex items-center gap-2 w-full h-8 px-2.5 rounded-md text-xs font-medium transition-colors ${isSubActive
-                                  ? 'shadow-xs font-semibold'
-                                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+                                ? 'shadow-xs font-semibold'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
                                 }`}
                               style={isSubActive ? activeStyle : undefined}
                             >

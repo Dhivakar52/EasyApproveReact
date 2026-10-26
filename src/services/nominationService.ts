@@ -1,10 +1,11 @@
 import type Nomination from "@/dataTypes/nomination";
-import type { NominationStatus, NominationType, ReassignmentRecord, ClarificationRecord, RequestComment } from "@/dataTypes/nomination";
-import { MOCK_NOMINATIONS } from "@/mocks/nominations.mock";
+import type { NominationStatus, NominationType, SupportingDocument, ReassignmentItem, ReassignmentRecord, ClarificationRecord, RequestComment, TimelineEvent } from "@/dataTypes/nomination";
 import { MOCK_NOTIFICATIONS, type SystemNotification } from "@/mocks/notifications.mock";
+import { emailService } from "@/services/emailService";
+import { NOTIFICATION_REASONS } from "@/templates/email/requestNotificationEmailTemplate";
 
-const STORAGE_KEY = "easyapprove_nominations_v2";
-const NOTIFICATIONS_STORAGE_KEY = "easyapprove_notifications_v2";
+const STORAGE_KEY = "easyapprove_nominations_v4";
+const NOTIFICATIONS_STORAGE_KEY = "easyapprove_notifications_v4";
 
 export const DEPARTMENTS = [
   "SRM Hospital",
@@ -22,130 +23,937 @@ export type DepartmentType = typeof DEPARTMENTS[number];
 
 export const NOMINATION_TYPES: NominationType[] = ["Travel Expenses", "Project"];
 
-// Initial seed builder from MOCK_NOMINATIONS
+// Helper to generate consistent relative date strings (YYYY-MM-DD)
+const getOffsetDateStr = (offsetDays: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+// Initial seed builder with realistic mock records for all user roles
 const buildSeedNominations = (): Nomination[] => {
-  return MOCK_NOMINATIONS.map((item, index) => {
-    const isProject = index % 2 === 0;
-    const deptMatch = DEPARTMENTS.find((d) => d.toLowerCase().includes(item.entity.toLowerCase())) || "SRM Tech";
-    const seedCat = ["Expense Request", "Travel Request", "Process Change", "Creative Approval", "Other"][index % 5];
-    const type: NominationType = isProject ? "Project" : "Travel Expenses";
+  const seedRecords: Array<{
+    id: string;
+    title: string;
+    category: string;
+    type: string;
+    nominationType: NominationType;
+    entity: string;
+    department: string;
+    requesterName: string;
+    requesterEmail: string;
+    approverName: string;
+    approverEmail: string;
+    amount: number;
+    amountBudgeted: number;
+    budgeted: string;
+    status: NominationStatus;
+    offsetDays: number;
+    createdOffset: number;
+    reassignCount?: number;
+    reassignments?: ReassignmentItem[];
+    clarification?: ClarificationRecord;
+    approvalRef?: string;
+    rejectReason?: string;
+    withdrawReason?: string;
+    details?: string;
+    reason?: string;
+  }> = [
+    // -------------------------------------------------------------
+    // Group 1: 15 Requests Created by Demo User (user@srmtech.com)
+    // Assigned to Demo Approver (approver@srmtech.com)
+    // -------------------------------------------------------------
+    {
+      id: "NOM-00101",
+      title: "Enterprise Cloud Infrastructure & AWS Compute Cluster",
+      category: "Expense Request",
+      type: "Expense Request",
+      nominationType: "Project",
+      entity: "SRM Tech",
+      department: "SRM Tech",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 350000,
+      amountBudgeted: 350000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: -5, // Overdue by 5 days
+      createdOffset: -16,
+      details: "High-density compute instances and storage buckets for AI model training pipelines.",
+      reason: "Existing on-premise clusters are operating at 98% saturation, causing build queue delays.",
+    },
+    {
+      id: "NOM-00102",
+      title: "International IEEE AI & Robotics Conference in Tokyo",
+      category: "Travel Request",
+      type: "Travel Request",
+      nominationType: "Travel Expenses",
+      entity: "SRM University",
+      department: "SRM University",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 68500,
+      amountBudgeted: 70000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: -3, // Overdue by 3 days
+      createdOffset: -14,
+      details: "Paper presentation on edge neural inference and bilateral academic exchange.",
+      reason: "Accepted peer-reviewed paper showcasing SRM automated approval telemetry models.",
+    },
+    {
+      id: "NOM-00103",
+      title: "Automated Microservices CI/CD Pipeline Modernization",
+      category: "Process Change",
+      type: "Process Change",
+      nominationType: "Project",
+      entity: "SRM Tech",
+      department: "SRM Tech",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 125000,
+      amountBudgeted: 125000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: -1, // Overdue by 1 day
+      createdOffset: -12,
+      details: "Automating zero-downtime canary deployments across staging and production Kubernetes pods.",
+      reason: "Reduces release turnaround from 4 hours to 18 minutes while enforcing compliance gates.",
+    },
+    {
+      id: "NOM-00104",
+      title: "High-Performance Workstations for ML Research Team",
+      category: "Expense Request",
+      type: "Expense Request",
+      nominationType: "Project",
+      entity: "SRM Research",
+      department: "SRM Research",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 480000,
+      amountBudgeted: 500000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: 2, // Due within 72 hours
+      createdOffset: -8,
+      details: "Procurement of 4 dedicated GPU workstations with 64GB unified memory for LLM evaluation.",
+      reason: "Required to accelerate biological structure inference benchmarks.",
+    },
+    {
+      id: "NOM-00105",
+      title: "SRM Portal Design System & Accessible UI Refresh",
+      category: "Creative Approval",
+      type: "Creative Approval",
+      nominationType: "Project",
+      entity: "Puthiya Thalaimurai",
+      department: "Puthiya Thalaimurai",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 85000,
+      amountBudgeted: 90000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: 5,
+      createdOffset: -6,
+      details: "Unified WCAG 2.1 AAA accessible color palette and responsive tokens across digital portals.",
+      reason: "Regulatory compliance audit requires enhanced high-contrast themes and keyboard navigation.",
+    },
+    {
+      id: "NOM-00106",
+      title: "SOC2 Compliance Pre-Audit & Vulnerability Assessment",
+      category: "Expense Request",
+      type: "Expense Request",
+      nominationType: "Project",
+      entity: "SRM Tech",
+      department: "SRM Tech",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 220000,
+      amountBudgeted: 220000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: 8,
+      createdOffset: -5,
+      details: "Third-party penetration testing and gap assessment report for annual security recertification.",
+      reason: "Mandatory audit prerequisite for enterprise client onboarding.",
+    },
+    {
+      id: "NOM-00107",
+      title: "Bengaluru Enterprise Client On-Site Technical Signoff",
+      category: "Travel Request",
+      type: "Travel Request",
+      nominationType: "Travel Expenses",
+      entity: "Global Holdings",
+      department: "Global Holdings",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 38000,
+      amountBudgeted: 40000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: 12,
+      createdOffset: -4,
+      details: "Travel for lead solutions engineer to conduct user acceptance testing on premises.",
+      reason: "Face-to-face workshop to achieve final acceptance milestone and trigger contract invoice.",
+    },
+    {
+      id: "NOM-00108",
+      title: "Biomedical Sensor Calibration & Lab Tools",
+      category: "Other",
+      type: "Other",
+      nominationType: "Project",
+      entity: "SRM Hospital",
+      department: "SRM Hospital",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 95000,
+      amountBudgeted: 100000,
+      budgeted: "Yes",
+      status: "Clarification Required",
+      offsetDays: 4,
+      createdOffset: -7,
+      clarification: {
+        by: "Demo Approver",
+        email: "approver@srmtech.com",
+        text: "Please attach certified calibration quotes and itemized GST tax breakdown.",
+        at: Date.now() - 864e5 * 2,
+        answeredAt: null,
+      },
+      details: "Annual recalibration of medical monitoring diagnostics and emergency room telemetry.",
+      reason: "Ensures compliance with clinical accuracy benchmarks and ISO standards.",
+    },
+    {
+      id: "NOM-00109",
+      title: "Enterprise Figma Organization License Renewal",
+      category: "Expense Request",
+      type: "Expense Request",
+      nominationType: "Project",
+      entity: "SRM Tech",
+      department: "SRM Tech",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 145000,
+      amountBudgeted: 150000,
+      budgeted: "Yes",
+      status: "Approved",
+      offsetDays: 15,
+      createdOffset: -10,
+      approvalRef: "APR-8421-9310",
+      details: "25 Enterprise design and development team seats with design-system branch permissions.",
+      reason: "Core tool for product UX, wireframing, and frontend engineering design handoff.",
+    },
+    {
+      id: "NOM-00110",
+      title: "Annual Technical Innovation Summit in Hyderabad",
+      category: "Travel Request",
+      type: "Travel Request",
+      nominationType: "Travel Expenses",
+      entity: "SRMAP",
+      department: "SRMAP",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 52000,
+      amountBudgeted: 55000,
+      budgeted: "Yes",
+      status: "Approved",
+      offsetDays: 20,
+      createdOffset: -12,
+      approvalRef: "APR-7193-4421",
+      details: "Keynote presentation and panel discussion at SRM inter-campus innovation showcase.",
+      reason: "Demonstrated automated approval lifecycle and AI integration with university stakeholders.",
+    },
+    {
+      id: "NOM-00111",
+      title: "Departmental Agile Transformation & Tooling Workflow",
+      category: "Process Change",
+      type: "Process Change",
+      nominationType: "Project",
+      entity: "SRM Tech",
+      department: "SRM Tech",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 45000,
+      amountBudgeted: 45000,
+      budgeted: "Yes",
+      status: "Approved",
+      offsetDays: 25,
+      createdOffset: -15,
+      approvalRef: "APR-6520-1198",
+      details: "Transition to 2-week dual-track sprint cadences with automated Jira release notes.",
+      reason: "Improves cross-functional visibility between product managers and engineering squads.",
+    },
+    {
+      id: "NOM-00112",
+      title: "Social Media Promo Video & Interactive Reel Campaign",
+      category: "Creative Approval",
+      type: "Creative Approval",
+      nominationType: "Project",
+      entity: "Puthiya Thalaimurai",
+      department: "Puthiya Thalaimurai",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 240000,
+      amountBudgeted: 150000,
+      budgeted: "Partially",
+      status: "Rejected",
+      offsetDays: -8,
+      createdOffset: -18,
+      rejectReason: "Budget exceeds available discretionary marketing allocation for Q3 campaigns.",
+      details: "Production of 6 high-definition video reels highlighting academic scholarship programs.",
+      reason: "Aims to boost digital engagement across student recruitment demographic channels.",
+    },
+    {
+      id: "NOM-00113",
+      title: "Third-Party Log Aggregator Commercial Subscription",
+      category: "Expense Request",
+      type: "Expense Request",
+      nominationType: "Project",
+      entity: "SRM Tech",
+      department: "SRM Tech",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 185000,
+      amountBudgeted: 120000,
+      budgeted: "Partially",
+      status: "Rejected",
+      offsetDays: -10,
+      createdOffset: -20,
+      rejectReason: "Existing internal OpenSearch cluster already satisfies all centralized log retention needs.",
+      details: "Commercial cloud SIEM license for server and network appliance log forwarding.",
+      reason: "Requested as convenience tool for infrastructure monitoring.",
+    },
+    {
+      id: "NOM-00114",
+      title: "Ergonomic Chairs for Department Collaboration Zone",
+      category: "Other",
+      type: "Other",
+      nominationType: "Project",
+      entity: "SRM Tech",
+      department: "SRM Tech",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 32000,
+      amountBudgeted: 35000,
+      budgeted: "Yes",
+      status: "Withdrawn",
+      offsetDays: -12,
+      createdOffset: -22,
+      withdrawReason: "Facilities operations team supplied inventory surplus from Building C without purchase.",
+      details: "Replacement of 8 ergonomic mesh chairs in the fourth-floor ideation lounge.",
+      reason: "Wear-and-tear replacement to improve workstation posture during long design reviews.",
+    },
+    {
+      id: "NOM-00115",
+      title: "Mobile Device Farm Hardware for Native App Testing",
+      category: "Expense Request",
+      type: "Expense Request",
+      nominationType: "Project",
+      entity: "SRM Tech",
+      department: "SRM Tech",
+      requesterName: "Demo User",
+      requesterEmail: "user@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 165000,
+      amountBudgeted: 170000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: 6,
+      createdOffset: -7,
+      reassignCount: 1, // Re-assigned (1/2)
+      reassignments: [
+        {
+          at: Date.now() - 864e5 * 2,
+          oldNumber: "NOM-00115",
+          newNumber: "NOM-00115-R1",
+          fromName: "Karthik Subramanian",
+          fromEmail: "karthik.subramanian@srmtech.com",
+          toName: "Demo Approver",
+          toEmail: "approver@srmtech.com",
+          toGroup: "SRM Tech",
+          reason: "Delegated for technical hardware budget signoff.",
+          deadline: getOffsetDateStr(6),
+        },
+      ],
+      details: "Dedicated testing rack with iOS and Android devices for automated CI test execution.",
+      reason: "Eliminates reliance on emulators for testing Bluetooth and camera barcode workflows.",
+    },
 
-    // Set realistic demo assignments
-    let reqName = item.nominee;
-    let reqEmail = `${item.nominee.toLowerCase().replace(/\s+/g, "")}${index}@srmtech.com`;
-    let appName = "Karthik Subramanian";
-    let appEmail = "karthik.subramanian@srmtech.com";
+    // -------------------------------------------------------------
+    // Group 2: Additional Requests Assigned to Demo Approver (approver@srmtech.com)
+    // Submitted by colleagues (Priya, Vikram, Ravi, Ayesha, Sathish)
+    // -------------------------------------------------------------
+    {
+      id: "NOM-00116",
+      title: "Clinical Informatics & Digital Health Symposium in Singapore",
+      category: "Travel Request",
+      type: "Travel Request",
+      nominationType: "Travel Expenses",
+      entity: "SRM Hospital",
+      department: "SRM Hospital",
+      requesterName: "Dr. Priya Nair",
+      requesterEmail: "priya.nair@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 89000,
+      amountBudgeted: 90000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: 7,
+      createdOffset: -5,
+      details: "Attending APAC Healthcare Digital Transformation roundtables.",
+      reason: "Hospital EHR integration study presentation with international clinical informatics peers.",
+    },
+    {
+      id: "NOM-00117",
+      title: "Dual Redundant Core Network Switch Replacement",
+      category: "Expense Request",
+      type: "Expense Request",
+      nominationType: "Project",
+      entity: "SRM Tech",
+      department: "SRM Tech",
+      requesterName: "Vikram Seth",
+      requesterEmail: "vikram.seth@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 320000,
+      amountBudgeted: 350000,
+      budgeted: "Yes",
+      status: "Clarification Required",
+      offsetDays: 3,
+      createdOffset: -6,
+      clarification: {
+        by: "Demo Approver",
+        email: "approver@srmtech.com",
+        text: "Please confirm vendor warranty coverage and annual maintenance contract SLA.",
+        at: Date.now() - 864e5,
+        answeredAt: null,
+      },
+      details: "10Gbps optical uplink switches to eliminate core campus backbone packet drops.",
+      reason: "Current switches reached end-of-support life cycle and suffer intermittent failovers.",
+    },
+    {
+      id: "NOM-00118",
+      title: "ISO 27001 Security Standard Operating Procedures Protocol",
+      category: "Process Change",
+      type: "Process Change",
+      nominationType: "Project",
+      entity: "SRMAP",
+      department: "SRMAP",
+      requesterName: "Ravi Kumar",
+      requesterEmail: "ravi.kumar@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 78000,
+      amountBudgeted: 80000,
+      budgeted: "Yes",
+      status: "Approved",
+      offsetDays: 14,
+      createdOffset: -11,
+      approvalRef: "APR-5812-9021",
+      details: "Documentation and implementation of updated access control governance rules.",
+      reason: "Mandatory standard operating procedure for state institutional cybersecurity benchmark.",
+    },
+    {
+      id: "NOM-00119",
+      title: "Campus Recruitment Brochure & Digital Media Kit",
+      category: "Creative Approval",
+      type: "Creative Approval",
+      nominationType: "Project",
+      entity: "SRM University",
+      department: "SRM University",
+      requesterName: "Ayesha Thomas",
+      requesterEmail: "ayesha.thomas@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 65000,
+      amountBudgeted: 50000,
+      budgeted: "Partially",
+      status: "Rejected",
+      offsetDays: -6,
+      createdOffset: -16,
+      rejectReason: "Requires alignment with newly revised university visual identity standards.",
+      details: "Design and print run of 5,000 corporate placement brochures.",
+      reason: "Distributed during upcoming campus recruitment placement drives.",
+    },
+    {
+      id: "NOM-00120",
+      title: "Campus-Wide Wi-Fi 6 Access Points Expansion",
+      category: "Expense Request",
+      type: "Expense Request",
+      nominationType: "Project",
+      entity: "SRM University",
+      department: "SRM University",
+      requesterName: "Sathish Kumar",
+      requesterEmail: "sathish.kumar@srmtech.com",
+      approverName: "Demo Approver",
+      approverEmail: "approver@srmtech.com",
+      amount: 420000,
+      amountBudgeted: 450000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: 9,
+      createdOffset: -8,
+      reassignCount: 2, // Re-assigned (2/2) - Maximum quota reached!
+      reassignments: [
+        {
+          at: Date.now() - 864e5 * 5,
+          oldNumber: "NOM-00120",
+          newNumber: "NOM-00120-R1",
+          fromName: "Dr. Arun Kumar",
+          fromEmail: "arun.kumar.hospital@example.com",
+          toName: "Karthik Subramanian",
+          toEmail: "karthik.subramanian@srmtech.com",
+          toGroup: "SRM University",
+          reason: "Delegated to IT infrastructure team for technical evaluation.",
+          deadline: getOffsetDateStr(12),
+        },
+        {
+          at: Date.now() - 864e5 * 2,
+          oldNumber: "NOM-00120-R1",
+          newNumber: "NOM-00120-R2",
+          fromName: "Karthik Subramanian",
+          fromEmail: "karthik.subramanian@srmtech.com",
+          toName: "Demo Approver",
+          toEmail: "approver@srmtech.com",
+          toGroup: "SRM Tech",
+          reason: "Delegated for final approval signoff after vendor selection.",
+          deadline: getOffsetDateStr(9),
+        },
+      ],
+      details: "Deployment of 30 enterprise Wi-Fi 6 access points in student library and hostel blocks.",
+      reason: "High concurrency access points required to resolve connectivity dead zones.",
+    },
 
-    if (index === 0) {
-      reqName = "Demo User";
-      reqEmail = "user@srmtech.com";
-      appName = "Demo Approver";
-      appEmail = "approver@srmtech.com";
-    } else if (index === 1) {
-      reqName = "Demo User";
-      reqEmail = "user@srmtech.com";
-      appName = "Demo Approver";
-      appEmail = "approver@srmtech.com";
-    } else if (index === 2) {
-      reqName = "Priya Nair";
-      reqEmail = "priya.nair@srmtech.com";
-      appName = "Demo Approver";
-      appEmail = "approver@srmtech.com";
-    } else if (index === 3 || index === 6) {
-      reqName = "Vikram Seth";
-      reqEmail = "vikram.seth@srmtech.com";
-      appName = "Demo Admin";
-      appEmail = "admin@srmtech.com";
-    } else if (index === 4 || index === 5 || index === 8) {
-      reqName = "Demo User";
-      reqEmail = "user@srmtech.com";
-      appName = "Demo Approver";
-      appEmail = "approver@srmtech.com";
+    // -------------------------------------------------------------
+    // Group 3: 12 Requests Created by Demo Approver (approver@srmtech.com)
+    // Assigned to Demo Admin (admin@srmtech.com)
+    // -------------------------------------------------------------
+    {
+      id: "NOM-00121",
+      title: "Executive Leadership Coaching & Faculty Development Program",
+      category: "Expense Request",
+      type: "Expense Request",
+      nominationType: "Project",
+      entity: "SRM Tech",
+      department: "SRM Tech",
+      requesterName: "Demo Approver",
+      requesterEmail: "approver@srmtech.com",
+      approverName: "Demo Admin",
+      approverEmail: "admin@srmtech.com",
+      amount: 195000,
+      amountBudgeted: 200000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: -4, // Overdue for Demo Approver
+      createdOffset: -15,
+      details: "Modular leadership workshops for departmental heads and senior project directors.",
+      reason: "Supports annual institutional goal for talent succession and executive readiness.",
+    },
+    {
+      id: "NOM-00122",
+      title: "Annual Global Higher Education Summit in London",
+      category: "Travel Request",
+      type: "Travel Request",
+      nominationType: "Travel Expenses",
+      entity: "Global Holdings",
+      department: "Global Holdings",
+      requesterName: "Demo Approver",
+      requesterEmail: "approver@srmtech.com",
+      approverName: "Demo Admin",
+      approverEmail: "admin@srmtech.com",
+      amount: 185000,
+      amountBudgeted: 190000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: -2, // Overdue for Demo Approver
+      createdOffset: -13,
+      details: "Delegation attendance at QS World University Rankings forum.",
+      reason: "Benchmarking academic research KPIs and exploring dual-degree partnerships.",
+    },
+    {
+      id: "NOM-00123",
+      title: "Campus Enterprise Storage Array Capacity Upgrade",
+      category: "Expense Request",
+      type: "Expense Request",
+      nominationType: "Project",
+      entity: "SRM Tech",
+      department: "SRM Tech",
+      requesterName: "Demo Approver",
+      requesterEmail: "approver@srmtech.com",
+      approverName: "Demo Admin",
+      approverEmail: "admin@srmtech.com",
+      amount: 380000,
+      amountBudgeted: 400000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: 3,
+      createdOffset: -6,
+      details: "Adding 100TB NVMe storage expansion shelves to central SAN array.",
+      reason: "High throughput required to host scientific computing datasets and hospital images.",
+    },
+    {
+      id: "NOM-00124",
+      title: "Automated Student Feedback & Accreditation Management System",
+      category: "Process Change",
+      type: "Process Change",
+      nominationType: "Project",
+      entity: "SRM University",
+      department: "SRM University",
+      requesterName: "Demo Approver",
+      requesterEmail: "approver@srmtech.com",
+      approverName: "Demo Admin",
+      approverEmail: "admin@srmtech.com",
+      amount: 210000,
+      amountBudgeted: 220000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: 6,
+      createdOffset: -5,
+      details: "Custom software module for real-time course appraisal analytics.",
+      reason: "Replaces manual surveys and compiles compliance reports for NAAC accreditation.",
+    },
+    {
+      id: "NOM-00125",
+      title: "SRM Centenary Excellence Monograph & Video Archive",
+      category: "Creative Approval",
+      type: "Creative Approval",
+      nominationType: "Project",
+      entity: "Puthiya Thalaimurai",
+      department: "Puthiya Thalaimurai",
+      requesterName: "Demo Approver",
+      requesterEmail: "approver@srmtech.com",
+      approverName: "Demo Admin",
+      approverEmail: "admin@srmtech.com",
+      amount: 155000,
+      amountBudgeted: 160000,
+      budgeted: "Yes",
+      status: "Pending",
+      offsetDays: 11,
+      createdOffset: -4,
+      details: "Historical commemorative coffee-table book and documentary footage compilation.",
+      reason: "Centenary archival milestone celebrating five decades of academic accomplishments.",
+    },
+    {
+      id: "NOM-00126",
+      title: "Advanced Robotics Lab Safety Interlock Systems",
+      category: "Other",
+      type: "Other",
+      nominationType: "Project",
+      entity: "SRM Research",
+      department: "SRM Research",
+      requesterName: "Demo Approver",
+      requesterEmail: "approver@srmtech.com",
+      approverName: "Demo Admin",
+      approverEmail: "admin@srmtech.com",
+      amount: 125000,
+      amountBudgeted: 130000,
+      budgeted: "Yes",
+      status: "Clarification Required",
+      offsetDays: 4,
+      createdOffset: -7,
+      clarification: {
+        by: "Demo Admin",
+        email: "admin@srmtech.com",
+        text: "Please attach certified electrical safety inspector audit report.",
+        at: Date.now() - 864e5,
+        answeredAt: null,
+      },
+      details: "Emergency stop circuits and photoelectric presence sensors for heavy robotic arm testing.",
+      reason: "Mandatory prerequisite to receive industrial safety operating permit.",
+    },
+    {
+      id: "NOM-00127",
+      title: "High-Throughput Genomic Sequencing Consumables",
+      category: "Expense Request",
+      type: "Expense Request",
+      nominationType: "Project",
+      entity: "SRM Hospital",
+      department: "SRM Hospital",
+      requesterName: "Demo Approver",
+      requesterEmail: "approver@srmtech.com",
+      approverName: "Demo Admin",
+      approverEmail: "admin@srmtech.com",
+      amount: 290000,
+      amountBudgeted: 300000,
+      budgeted: "Yes",
+      status: "Clarification Required",
+      offsetDays: 5,
+      createdOffset: -8,
+      clarification: {
+        by: "Demo Admin",
+        email: "admin@srmtech.com",
+        text: "Kindly provide 3 comparative vendor quotes per state procurement guidelines.",
+        at: Date.now() - 864e5 * 2,
+        answeredAt: null,
+      },
+      details: "Reagents, flow cells, and enzymatic kits for oncology genomic biomarker screening.",
+      reason: "Critical diagnostic reagents for patient genomic pathology unit.",
+    },
+    {
+      id: "NOM-00128",
+      title: "Cloud Disaster Recovery Site & Automated Failover Testing",
+      category: "Expense Request",
+      type: "Expense Request",
+      nominationType: "Project",
+      entity: "SRM Tech",
+      department: "SRM Tech",
+      requesterName: "Demo Approver",
+      requesterEmail: "approver@srmtech.com",
+      approverName: "Demo Admin",
+      approverEmail: "admin@srmtech.com",
+      amount: 460000,
+      amountBudgeted: 480000,
+      budgeted: "Yes",
+      status: "Approved",
+      offsetDays: 18,
+      createdOffset: -12,
+      approvalRef: "APR-9102-3341",
+      details: "Secondary active-standby cloud data center with automated database replication.",
+      reason: "Guarantees RPO of less than 5 minutes and RTO under 15 minutes during disaster drill.",
+    },
+    {
+      id: "NOM-00129",
+      title: "International Medical Accreditation Council in Dubai",
+      category: "Travel Request",
+      type: "Travel Request",
+      nominationType: "Travel Expenses",
+      entity: "SRM Hospital",
+      department: "SRM Hospital",
+      requesterName: "Demo Approver",
+      requesterEmail: "approver@srmtech.com",
+      approverName: "Demo Admin",
+      approverEmail: "admin@srmtech.com",
+      amount: 142000,
+      amountBudgeted: 150000,
+      budgeted: "Yes",
+      status: "Approved",
+      offsetDays: 22,
+      createdOffset: -14,
+      approvalRef: "APR-8391-4412",
+      details: "Delegation attendance at JCI Healthcare Accreditation annual assembly.",
+      reason: "Successful renewal of Joint Commission International medical center accreditation.",
+    },
+    {
+      id: "NOM-00130",
+      title: "Centralized Procurement Workflow Standardization",
+      category: "Process Change",
+      type: "Process Change",
+      nominationType: "Project",
+      entity: "Global Holdings",
+      department: "Global Holdings",
+      requesterName: "Demo Approver",
+      requesterEmail: "approver@srmtech.com",
+      approverName: "Demo Admin",
+      approverEmail: "admin@srmtech.com",
+      amount: 92000,
+      amountBudgeted: 95000,
+      budgeted: "Yes",
+      status: "Approved",
+      offsetDays: 28,
+      createdOffset: -16,
+      approvalRef: "APR-7721-9982",
+      details: "Unification of purchase orders and vendor approval hierarchies across group subsidiaries.",
+      reason: "Reduces procurement cycle time and consolidates multi-unit purchasing discounts.",
+    },
+    {
+      id: "NOM-00131",
+      title: "Regional Television Commercial Airtime Buy",
+      category: "Creative Approval",
+      type: "Creative Approval",
+      nominationType: "Project",
+      entity: "Puthiya Thalaimurai",
+      department: "Puthiya Thalaimurai",
+      requesterName: "Demo Approver",
+      requesterEmail: "approver@srmtech.com",
+      approverName: "Demo Admin",
+      approverEmail: "admin@srmtech.com",
+      amount: 620000,
+      amountBudgeted: 400000,
+      budgeted: "Partially",
+      status: "Rejected",
+      offsetDays: -7,
+      createdOffset: -17,
+      rejectReason: "Exceeds annual television advertising budget allocation for non-prime slots.",
+      details: "Broadcast airtime package across regional news channels for autumn admissions.",
+      reason: "Campaign targeted at increasing awareness of new engineering faculties.",
+    },
+    {
+      id: "NOM-00132",
+      title: "Regional Education Expo & Student Outreach in Coimbatore",
+      category: "Travel Request",
+      type: "Travel Request",
+      nominationType: "Travel Expenses",
+      entity: "SRMAP",
+      department: "SRMAP",
+      requesterName: "Demo Approver",
+      requesterEmail: "approver@srmtech.com",
+      approverName: "Demo Admin",
+      approverEmail: "admin@srmtech.com",
+      amount: 35000,
+      amountBudgeted: 35000,
+      budgeted: "Yes",
+      status: "Withdrawn",
+      offsetDays: -11,
+      createdOffset: -21,
+      withdrawReason: "Event deferred to subsequent quarter by organizing education board.",
+      details: "Staff travel and booth installation at Coimbatore convention center.",
+      reason: "Student admissions counseling session.",
+    },
+  ];
+
+  return seedRecords.map((r, index) => {
+    const isProject = r.nominationType === "Project";
+    const dateStr = getOffsetDateStr(r.createdOffset);
+    const deadlineStr = getOffsetDateStr(r.offsetDays);
+
+    const timeline: TimelineEvent[] = [
+      {
+        at: Date.now() - Math.abs(r.createdOffset) * 864e5,
+        by: r.requesterName,
+        action: "Request Submitted",
+        note: `Initial proposal submitted for ${r.category} signoff.`,
+        status: "Pending",
+      },
+    ];
+
+    if (r.clarification) {
+      timeline.push({
+        at: r.clarification.at,
+        by: r.clarification.by,
+        action: "Clarification Requested",
+        note: r.clarification.text,
+        status: "Clarification Required",
+      });
+    }
+
+    if (r.status === "Approved") {
+      timeline.push({
+        at: Date.now() - 864e5 * 2,
+        by: r.approverName,
+        action: "Approved",
+        note: `Approved by ${r.approverName}. Ref: ${r.approvalRef}`,
+        status: "Approved",
+      });
+    } else if (r.status === "Rejected") {
+      timeline.push({
+        at: Date.now() - 864e5 * 3,
+        by: r.approverName,
+        action: "Request Rejected",
+        note: r.rejectReason || "Rejected by reviewer.",
+        status: "Rejected",
+      });
+    } else if (r.status === "Withdrawn") {
+      timeline.push({
+        at: Date.now() - 864e5 * 4,
+        by: r.requesterName,
+        action: "Withdrawn by requester",
+        note: r.withdrawReason || "Withdrawn.",
+        status: "Withdrawn",
+      });
     }
 
     return {
-      id: item.id,
-      number: item.id,
-      title: isProject
-        ? `${seedCat} - Phase ${index + 1}`
-        : `${seedCat} - Field Assessment`,
-      nominee: reqName,
-      department: deptMatch,
-      entity: item.entity,
-      category: seedCat,
-      nominationType: type,
-      type: seedCat,
-      amount: isProject ? 350000 + (index * 25000) : 28500 + (index * 4200),
-      deadline: `2026-10-${22 + (index % 8)}`,
-      approverName: appName,
-      approverEmail: appEmail,
-      requesterName: reqName,
-      requesterEmail: reqEmail,
-      createdAt: `2026-10-${10 + (index % 10)}`,
-      submittedDate: `07/${15 + (index % 15)}/2025`,
-      assignedEmployee: appName,
-      status: item.status,
-      progress: item.progress,
-      mobileNumber: `+91 9845${index} 7612${index % 10}`,
-      nomineeEmail: reqEmail,
-      managerEmail: appEmail,
-      referrals: ["ccuser@srmtech.com", "sathishkumar312@srm.com", "kumaran@srm.com"],
+      id: r.id,
+      number: r.id,
+      title: r.title,
+      nominee: r.requesterName,
+      department: r.department,
+      entity: r.entity,
+      category: r.category,
+      nominationType: r.nominationType,
+      type: r.type,
+      amount: r.amount,
+      amountBudgeted: r.amountBudgeted,
+      budgetAllocated: r.amountBudgeted,
+      budgeted: r.budgeted,
+      isBudgeted: r.budgeted,
+      deadline: deadlineStr,
+      approverName: r.approverName,
+      approverEmail: r.approverEmail,
+      requesterName: r.requesterName,
+      requesterEmail: r.requesterEmail,
+      createdAt: dateStr,
+      submittedDate: dateStr,
+      assignedEmployee: r.approverName,
+      status: r.status,
+      details: r.details || "Detailed proposal documentation for departmental signoff.",
+      reason: r.reason || "Operational necessity and commercial justification.",
+      description: `${r.details || "Detailed proposal"}\n\nJustification: ${r.reason || "Operational necessity"}`,
+      clarification: r.clarification,
+      clarifications: r.clarification ? [r.clarification] : [],
+      approvalRef: r.approvalRef,
+      decision: r.status === "Approved" ? {
+        type: "Approved",
+        by: r.approverName,
+        email: r.approverEmail,
+        at: Date.now() - 864e5 * 2,
+        reason: "Approved as per standard workflow guidelines.",
+        approvalRef: r.approvalRef,
+      } : r.status === "Rejected" ? {
+        type: "Rejected",
+        by: r.approverName,
+        email: r.approverEmail,
+        at: Date.now() - 864e5 * 3,
+        reason: r.rejectReason || "Budgetary restrictions.",
+      } : undefined,
+      withdrawReason: r.withdrawReason,
+      reassignCount: r.reassignCount || (r.reassignments ? r.reassignments.length : 0),
+      reassignments: r.reassignments || [],
+      timeline,
+      referrals: ["ccuser@srmtech.com", "sathishkumar312@srm.com"],
       ccEmail: "ccuser@srmtech.com, sathishkumar312@srm.com",
-      comments: index === 1 ? [
-        {
-          id: `cmt-${index}-1`,
-          requestId: item.id,
-          authorName: "Demo User",
-          authorEmail: "user@srmtech.com",
-          authorRole: "user",
-          text: "Submitted quotation details and expense breakdown for executive review.",
-          createdAt: Date.now() - 3600000 * 24,
-        },
-        {
-          id: `cmt-${index}-2`,
-          requestId: item.id,
-          authorName: "Demo Approver",
-          authorEmail: "approver@srmtech.com",
-          authorRole: "approver",
-          text: "Reviewed the initial submission. Please verify tax deductions.",
-          createdAt: Date.now() - 3600000 * 12,
-        }
-      ] : [],
+      originalSubmitter: r.requesterName,
+      submittedBy: "Self",
       supportingDocuments: [
         {
           id: `doc-${index}-1`,
           name: isProject ? "project_proposal_summary.pdf" : "travel_boarding_invoices.pdf",
           size: 1420500,
           type: "application/pdf",
-          uploadedAt: `07/${15 + (index % 15)}/2025`,
+          uploadedAt: dateStr,
         },
       ],
-      description: `Comprehensive nomination submission for ${item.nominee} highlighting excellence and outcomes in ${item.category}.`,
-      travelDetails: !isProject
-        ? {
-            purpose: "International Research Symposium & Clinical Knowledge Exchange",
-            destination: "Bengaluru Innovation Hub / SRM Campus",
-            departureDate: "2025-07-20",
-            returnDate: "2025-07-25",
-            travelMode: "Flight",
-            estimatedCost: String(28500 + (index * 4200)),
-            justification: "Represented the department and presented research findings.",
-          }
-        : undefined,
-      projectDetails: isProject
-        ? {
-            projectName: `Next-Gen ${item.category} Platform`,
-            domain: "Enterprise Software & Cloud Systems",
-            projectRole: "Technical Lead",
-            duration: "6 Months",
-            teamSize: "8 Engineers",
-            impact: "Automated legacy processing, reduced operational turnaround by 45%.",
-            keyDeliverables: "Full architecture, automated test suites, production rollout.",
-          }
-        : undefined,
-      reassignmentHistory: [],
-      originalSubmitter: item.nominee,
-      submittedBy: "Self",
+      attachments: [
+        {
+          id: `doc-${index}-1`,
+          name: isProject ? "project_proposal_summary.pdf" : "travel_boarding_invoices.pdf",
+          size: 1420500,
+          type: "application/pdf",
+          uploadedAt: dateStr,
+        },
+      ],
     };
   });
 };
@@ -204,7 +1012,9 @@ export const nominationService = {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed: Nomination[] = JSON.parse(stored);
-        return parsed.map((n, i) => normalizeNomination(n, i));
+        if (parsed && Array.isArray(parsed) && parsed.length >= 25) {
+          return parsed.map((n, i) => normalizeNomination(n, i));
+        }
       }
       const initial = buildSeedNominations();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
@@ -315,6 +1125,28 @@ export const nominationService = {
       read: false,
     });
 
+    // Integration Point: Dispatches the branded Approval Request Notification HTML email
+    if (newNomination.approverEmail) {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const reqId = newNomination.number || newNomination.id;
+      emailService.sendRequestNotificationEmail({
+        heading: 'New Approval Request',
+        subject: `New Approval Request — ${reqId}`,
+        eventMessage: 'A new approval request has been submitted and requires your review.',
+        reason: NOTIFICATION_REASONS.NEW_APPROVAL_REQUIRED,
+        recipientEmail: newNomination.approverEmail,
+        recipientName: newNomination.approverName || 'Approver',
+        requestId: reqId,
+        requestTitle: newNomination.title,
+        requesterName: newNomination.requesterName || newNomination.nominee || 'Demo User',
+        approverName: newNomination.approverName || 'Approver',
+        category: newNomination.type || newNomination.category || 'Approval Request',
+        status: newNomination.status,
+        deadline: newNomination.deadline || 'Standard SLA (3 Business Days)',
+        requestUrl: `${origin}/approvals/${reqId}`,
+      });
+    }
+
     // Notify listeners
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("easyapprove_nominations_updated"));
@@ -417,12 +1249,12 @@ export const nominationService = {
     }
 
     this.addNotification({
-      title: newStatus === "Approved" ? "Nomination Approved" : "Nomination Status Updated",
+      title: newStatus === "Approved" ? "Approved" : "Nomination Status Updated",
       message: `Nomination ${current.id} (${current.title}) status changed to ${newStatus}${
         reviewerName ? ` by ${reviewerName}` : ""
       }.${notes ? ` Note: ${notes}` : ""}`,
       time: "Just now",
-      type: newStatus === "Approved" ? "Nomination Approved" : "Nomination Approval Required",
+      type: newStatus === "Approved" ? "Approved" : "Nomination Approval Required",
     });
 
     if (typeof window !== "undefined") {
@@ -438,17 +1270,22 @@ export const nominationService = {
       const stored = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
       if (stored) {
         const parsed: SystemNotification[] = JSON.parse(stored);
-        // Ensure every notification has an id
-        return parsed.map((n, idx) => ({
-          ...n,
-          id: n.id || `notif_${idx}_${Date.now()}`,
-          read: Boolean(n.read),
-        }));
+        // If stored contains legacy awards prototype notifications, re-seed with EasyApprove notifications
+        const isLegacy = parsed.some(
+          (n) => n.title === "Referral Request" || n.message?.includes("Vijay Kumar")
+        );
+        if (!isLegacy && parsed.length > 0) {
+          return parsed.map((n, idx) => ({
+            ...n,
+            id: n.id || `notif_${idx}_${Date.now()}`,
+            read: Boolean(n.read),
+          }));
+        }
       }
       const initialWithIds: SystemNotification[] = MOCK_NOTIFICATIONS.map((n, idx) => ({
         ...n,
         id: n.id || `notif_${idx}_${Date.now()}`,
-        read: idx > 2, // first 3 unread for demonstration
+        read: n.read !== undefined ? n.read : idx > 2,
       }));
       localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(initialWithIds));
       return initialWithIds;
@@ -539,7 +1376,8 @@ export const nominationService = {
   wfApprove(
     nominationId: string,
     reason: string,
-    reviewerName: string = "Dr. Priya Nair"
+    reviewerName: string = "Dr. Priya Nair",
+    files: SupportingDocument[] = []
   ): { success: boolean; nomination?: Nomination; error?: string } {
     const list = this.getNominations();
     const index = list.findIndex(
@@ -553,13 +1391,17 @@ export const nominationService = {
     const approvalRef = `APR-${randPart1}-${randPart2}`;
     const nowTs = Date.now();
 
+    const noteWithFiles = files.length > 0
+      ? `${reason} (${files.length} attachment${files.length > 1 ? "s" : ""}) (Audit Reference: ${approvalRef})`
+      : `${reason} (Audit Reference: ${approvalRef})`;
+
     const updatedTimeline = [
       ...(current.timeline || []),
       {
         at: nowTs,
         by: reviewerName,
-        action: "Request Approved",
-        note: `${reason} (Audit Reference: ${approvalRef})`,
+        action: "Approved",
+        note: noteWithFiles,
         status: "Approved",
       },
     ];
@@ -576,8 +1418,15 @@ export const nominationService = {
         reason,
         approvalRef,
         revision: current.version || 1,
-        files: [],
+        files: files.map((f) => ({
+          name: f.name,
+          size: f.size,
+          type: f.type,
+          dataUrl: f.dataUrl,
+        })),
       },
+      supportingDocuments: [...(current.supportingDocuments || []), ...files],
+      attachments: [...(current.attachments || []), ...files],
       timeline: updatedTimeline,
     };
 
@@ -590,11 +1439,34 @@ export const nominationService = {
 
     this.addNotification({
       requestId: updated.number || updated.id,
-      title: "Request Officially Approved",
-      message: `Request ${updated.number || updated.id} (${updated.title}) was officially APPROVED by ${reviewerName}. Audit Ref: ${approvalRef}.`,
+      title: "Approved",
+      message: `Request ${updated.number || updated.id} (${updated.title}) was Approved by ${reviewerName}. Audit Ref: ${approvalRef}.`,
       time: "Just now",
-      type: "Nomination Approved",
+      type: "Approved",
     });
+
+    // Integration Point: Dispatches Request Approved notification email to requester
+    const requesterEmail = updated.requesterEmail || updated.nomineeEmail;
+    if (requesterEmail) {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const reqId = updated.number || updated.id;
+      emailService.sendRequestNotificationEmail({
+        heading: 'Approved',
+        subject: `Approved — ${reqId}`,
+        eventMessage: `Your approval request has been Approved by ${reviewerName}.`,
+        reason: NOTIFICATION_REASONS.APPROVED,
+        recipientEmail: requesterEmail,
+        recipientName: updated.requesterName || updated.nominee || 'Requester',
+        requestId: reqId,
+        requestTitle: updated.title,
+        requesterName: updated.requesterName || updated.nominee || 'Requester',
+        approverName: reviewerName,
+        category: updated.type || updated.category || 'Approval Request',
+        status: 'Approved',
+        deadline: updated.deadline,
+        requestUrl: `${origin}/my-nominations/${reqId}`,
+      });
+    }
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("easyapprove_nominations_updated"));
@@ -605,7 +1477,7 @@ export const nominationService = {
   wfReject(
     nominationId: string,
     reason: string,
-    files: Array<{ name: string; size: number }> = [],
+    files: SupportingDocument[] | Array<{ name: string; size: number }> = [],
     reviewerName: string = "Dr. Priya Nair"
   ): { success: boolean; nomination?: Nomination; error?: string } {
     const list = this.getNominations();
@@ -617,13 +1489,17 @@ export const nominationService = {
     const current = list[index];
     const nowTs = Date.now();
 
+    const noteWithFiles = files.length > 0
+      ? `${reason} (${files.length} rejection document${files.length > 1 ? "s" : ""})`
+      : reason;
+
     const updatedTimeline = [
       ...(current.timeline || []),
       {
         at: nowTs,
         by: reviewerName,
         action: "Request Rejected",
-        note: reason,
+        note: noteWithFiles,
         status: "Rejected",
       },
     ];
@@ -638,8 +1514,15 @@ export const nominationService = {
         at: nowTs,
         reason,
         revision: current.version || 1,
-        files,
+        files: files.map((f: any) => ({
+          name: f.name,
+          size: f.size,
+          type: f.type,
+          dataUrl: f.dataUrl,
+        })),
       },
+      supportingDocuments: [...(current.supportingDocuments || []), ...(files as any)],
+      attachments: [...(current.attachments || []), ...(files as any)],
       timeline: updatedTimeline,
     };
 
@@ -658,6 +1541,29 @@ export const nominationService = {
       type: "Nomination Approval Required",
     });
 
+    // Integration Point: Dispatches Request Rejected notification email to requester
+    const requesterEmail = updated.requesterEmail || updated.nomineeEmail;
+    if (requesterEmail) {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const reqId = updated.number || updated.id;
+      emailService.sendRequestNotificationEmail({
+        heading: 'Request Rejected',
+        subject: `Request Rejected — ${reqId}`,
+        eventMessage: `Your approval request has been rejected by ${reviewerName}.`,
+        reason: reason || NOTIFICATION_REASONS.REJECTED,
+        recipientEmail: requesterEmail,
+        recipientName: updated.requesterName || updated.nominee || 'Requester',
+        requestId: reqId,
+        requestTitle: updated.title,
+        requesterName: updated.requesterName || updated.nominee || 'Requester',
+        approverName: reviewerName,
+        category: updated.type || updated.category || 'Approval Request',
+        status: 'Rejected',
+        deadline: updated.deadline,
+        requestUrl: `${origin}/my-nominations/${reqId}`,
+      });
+    }
+
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("easyapprove_nominations_updated"));
     }
@@ -668,7 +1574,8 @@ export const nominationService = {
     nominationId: string,
     text: string,
     comments?: string,
-    reviewerName: string = "Dr. Priya Nair"
+    reviewerName: string = "Dr. Priya Nair",
+    files: SupportingDocument[] = []
   ): { success: boolean; nomination?: Nomination; error?: string } {
     const list = this.getNominations();
     const index = list.findIndex(
@@ -682,6 +1589,9 @@ export const nominationService = {
     const noteContent = comments
       ? `Inquiry: ${text}\nComments: ${comments}`
       : text;
+    const noteWithFiles = files.length > 0
+      ? `${noteContent} (${files.length} attachment${files.length > 1 ? "s" : ""})`
+      : noteContent;
 
     const updatedTimeline = [
       ...(current.timeline || []),
@@ -689,7 +1599,7 @@ export const nominationService = {
         at: nowTs,
         by: reviewerName,
         action: "Clarification Requested",
-        note: noteContent,
+        note: noteWithFiles,
         status: "Clarification Required",
       },
     ];
@@ -703,6 +1613,7 @@ export const nominationService = {
       comments: comments || "",
       revision: current.version || 1,
       answeredAt: null,
+      files,
     };
 
     const updated: Nomination = {
@@ -710,6 +1621,8 @@ export const nominationService = {
       status: "Clarification Required",
       clarification: newClarificationRecord,
       clarifications: [...prevClarifications, newClarificationRecord],
+      supportingDocuments: [...(current.supportingDocuments || []), ...files],
+      attachments: [...(current.attachments || []), ...files],
       timeline: updatedTimeline,
     };
 
@@ -728,6 +1641,28 @@ export const nominationService = {
       type: "Nomination Approval Required",
     });
 
+    // Integration Point: Dispatches clarification notification email to the requester
+    if (current.requesterEmail || current.nomineeEmail) {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const reqId = updated.number || updated.id;
+      emailService.sendRequestNotificationEmail({
+        heading: 'Clarification Requested',
+        subject: `Clarification Requested — ${reqId}`,
+        eventMessage: `The approver (${reviewerName}) has requested additional clarification or documentation from you on this request.`,
+        reason: text || NOTIFICATION_REASONS.CLARIFICATION_REQUIRED,
+        recipientEmail: current.requesterEmail || current.nomineeEmail || '',
+        recipientName: current.requesterName || current.nominee || 'Requester',
+        requestId: reqId,
+        requestTitle: updated.title,
+        requesterName: current.requesterName || current.nominee || 'Requester',
+        approverName: reviewerName,
+        category: updated.type || updated.category || 'Approval Request',
+        status: 'Clarification Required',
+        deadline: updated.deadline,
+        requestUrl: `${origin}/my-nominations/${reqId}`,
+      });
+    }
+
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("easyapprove_nominations_updated"));
     }
@@ -736,7 +1671,14 @@ export const nominationService = {
 
   wfReassign(
     nominationId: string,
-    payload: { group: string; email: string; name: string; deadline: string; reason: string },
+    payload: {
+      group: string;
+      email: string;
+      name: string;
+      deadline: string;
+      reason: string;
+      files?: SupportingDocument[];
+    },
     reviewerName: string = "Dr. Priya Nair"
   ): { success: boolean; nomination?: Nomination; error?: string } {
     const list = this.getNominations();
@@ -751,12 +1693,13 @@ export const nominationService = {
       return { success: false, error: "This request has reached the maximum delegation quota of 2 reassignments." };
     }
 
+    const files = payload.files || [];
     const baseNumber = current.baseNumber || current.number || current.id;
     const oldNumber = current.number || current.id;
     const newNumber = `${baseNumber}-R${reassignCount}`;
     const nowTs = Date.now();
 
-    const reassignmentItem = {
+    const reassignmentItem: ReassignmentItem = {
       at: nowTs,
       fromName: current.approverName || reviewerName,
       fromEmail: current.approverEmail || "",
@@ -767,7 +1710,12 @@ export const nominationService = {
       oldNumber,
       newNumber,
       deadline: payload.deadline,
+      files,
     };
+
+    const reassignNote = files.length > 0
+      ? `Generated ID ${newNumber}. Revised deadline: ${payload.deadline}. ${payload.reason} (${files.length} attachment${files.length > 1 ? "s" : ""})`
+      : `Generated ID ${newNumber}. Revised deadline: ${payload.deadline}. ${payload.reason}`;
 
     const updatedTimeline = [
       ...(current.timeline || []),
@@ -775,7 +1723,7 @@ export const nominationService = {
         at: nowTs,
         by: reviewerName,
         action: `Approval Delegated to ${payload.name}`,
-        note: `Generated ID ${newNumber}. Revised deadline: ${payload.deadline}. ${payload.reason}`,
+        note: reassignNote,
         status: "Pending",
       },
     ];
@@ -793,6 +1741,8 @@ export const nominationService = {
       deadline: payload.deadline,
       status: "Pending",
       reason: `${current.reason || ""}\n\n[Delegated by ${current.approverName || reviewerName}: ${payload.reason}]`,
+      supportingDocuments: [...(current.supportingDocuments || []), ...files],
+      attachments: [...(current.attachments || []), ...files],
       timeline: updatedTimeline,
     };
 
@@ -810,6 +1760,27 @@ export const nominationService = {
       time: "Just now",
       type: "New Referral Request",
     });
+
+    // Integration Point: Dispatches reassignment notification email to the new approver
+    if (payload.email) {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      emailService.sendRequestNotificationEmail({
+        heading: 'Request Reassigned',
+        subject: `Request Reassigned — ${newNumber}`,
+        eventMessage: `An approval request has been reassigned to you for review and sign-off by ${reviewerName}.`,
+        reason: payload.reason || NOTIFICATION_REASONS.REASSIGNED,
+        recipientEmail: payload.email,
+        recipientName: payload.name,
+        requestId: newNumber,
+        requestTitle: current.title,
+        requesterName: current.requesterName || current.nominee || 'Requester',
+        approverName: payload.name,
+        category: current.type || current.category || 'Approval Request',
+        status: 'Pending',
+        deadline: payload.deadline,
+        requestUrl: `${origin}/approvals/${newNumber}`,
+      });
+    }
 
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("easyapprove_nominations_updated"));
@@ -1013,13 +1984,38 @@ export const nominationService = {
     const item = this.getNominationById(nominationId);
     if (!item) return { success: false, error: "Request not found." };
 
+    const reqId = item.number || item.id;
+    const reqTitle = item.title || "Approval Request";
+
     this.addNotification({
-      requestId: item.number || item.id,
+      requestId: reqId,
       title: "Approver Deadline Reminder Dispatched",
-      message: `High priority reminder sent by ${requesterName} to ${item.approverName || "Approver"} (${item.approverEmail || ""}) for request ${item.number || item.id}.`,
+      message: `Reminder sent by ${requesterName} to ${item.approverName || "Approver"} for request ${reqId} (${reqTitle}).`,
       time: "Just now",
       type: "Nomination Approval Required",
     });
+
+    // Integration Point: Dispatches urgent deadline reminder email to approver
+    if (item.approverEmail) {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      emailService.sendRequestNotificationEmail({
+        heading: 'Approval Reminder',
+        subject: `Reminder: Action Required — ${reqId} (${reqTitle})`,
+        eventMessage: `This is a reminder that an approval decision is pending on request ${reqId}: ${reqTitle}.`,
+        reason: 'A reminder has been sent by the requester for your pending review and approval action.',
+        recipientEmail: item.approverEmail,
+        recipientName: item.approverName || 'Approver',
+        requestId: reqId,
+        requestTitle: reqTitle,
+        requesterName: requesterName,
+        approverName: item.approverName || 'Approver',
+        category: item.type || item.category || 'Approval Request',
+        status: item.status,
+        deadline: item.deadline,
+        requestUrl: `${origin}/approvals/${reqId}`,
+      });
+    }
+
     return { success: true };
   },
 

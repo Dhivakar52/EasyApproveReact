@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { nominationService, APPROVERS_BY_GROUP, GROUPS_LIST } from "../services/nominationService";
-import type { Nomination, RequestComment } from "../dataTypes/nomination";
+import type { Nomination, RequestComment, SupportingDocument } from "../dataTypes/nomination";
+import { ActionAttachmentSection } from "@/components/shared/ActionAttachmentSection";
 import { DatePicker } from "@/components/ui/date-picker";
 import { toast } from "sonner";
 import { formatDateDDMMYYYY, parseDate } from "@/lib/utils";
@@ -80,16 +81,18 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
   // Modal Form States
   const [approveRemarks, setApproveRemarks] = useState<string>("");
   const [approveError, setApproveError] = useState<string>("");
+  const [approveFiles, setApproveFiles] = useState<SupportingDocument[]>([]);
   const [isSubmittingApprove, setIsSubmittingApprove] = useState<boolean>(false);
 
   const [rejectReason, setRejectReason] = useState<string>("");
-  const [rejectFiles, setRejectFiles] = useState<File[]>([]);
+  const [rejectFiles, setRejectFiles] = useState<SupportingDocument[]>([]);
   const [rejectError, setRejectError] = useState<string>("");
   const [isSubmittingReject, setIsSubmittingReject] = useState<boolean>(false);
 
   const [clarifyText, setClarifyText] = useState<string>("");
   const [clarifyComments, setClarifyComments] = useState<string>("");
   const [clarifyError, setClarifyError] = useState<string>("");
+  const [clarifyFiles, setClarifyFiles] = useState<SupportingDocument[]>([]);
   const [isSubmittingClarify, setIsSubmittingClarify] = useState<boolean>(false);
 
   // Reassign state
@@ -98,6 +101,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
   const [reassignName, setReassignName] = useState<string>("");
   const [reassignDeadline, setReassignDeadline] = useState<string>(minDeadlineISO());
   const [reassignReason, setReassignReason] = useState<string>("");
+  const [reassignFiles, setReassignFiles] = useState<SupportingDocument[]>([]);
   const [reassignErrors, setReassignErrors] = useState<Record<string, string>>({});
   const [isSubmittingReassign, setIsSubmittingReassign] = useState<boolean>(false);
 
@@ -360,13 +364,12 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       return;
     }
     setIsSubmittingApprove(true);
-    const res = nominationService.wfApprove(req.id, approveRemarks.trim());
+    const res = nominationService.wfApprove(req.id, approveRemarks.trim(), currentUserName, approveFiles);
     setIsSubmittingApprove(false);
     if (res.success) {
       setModalType(null);
-      toast.success(
-        `Request ${req.number || req.id} has been approved. Reference: ${res.nomination?.approvalRef}`
-      );
+      setApproveFiles([]);
+      toast.success("Approved");
       loadData();
     } else {
       setApproveError(res.error || "Approval failed.");
@@ -381,11 +384,11 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       return;
     }
     setIsSubmittingReject(true);
-    const filesMeta = rejectFiles.map((f) => ({ name: f.name, size: f.size }));
-    const res = nominationService.wfReject(req.id, rejectReason.trim(), filesMeta);
+    const res = nominationService.wfReject(req.id, rejectReason.trim(), rejectFiles, currentUserName);
     setIsSubmittingReject(false);
     if (res.success) {
       setModalType(null);
+      setRejectFiles([]);
       toast.error(`Request ${req.number || req.id} has been rejected.`);
       loadData();
     } else {
@@ -401,13 +404,14 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       return;
     }
     setIsSubmittingClarify(true);
-    const res = nominationService.wfClarify(req.id, clarifyText.trim(), clarifyComments.trim());
+    const res = nominationService.wfClarify(req.id, clarifyText.trim(), clarifyComments.trim(), currentUserName, clarifyFiles);
     setIsSubmittingClarify(false);
     if (res.success) {
       setModalType(null);
       setClarifyText("");
       setClarifyComments("");
       setClarifyError("");
+      setClarifyFiles([]);
       toast.warning(`Clarification requested from ${req.nominee || "requester"}.`);
       loadData();
     } else {
@@ -458,11 +462,13 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       name: reassignName,
       deadline: reassignDeadline,
       reason: reassignReason.trim(),
-    });
+      files: reassignFiles,
+    }, currentUserName);
     setIsSubmittingReassign(false);
 
     if (res.success) {
       setModalType(null);
+      setReassignFiles([]);
       toast.success(`Approval delegated to ${reassignName} (Reference: ${res.nomination?.number}).`);
       loadData();
     } else {
@@ -556,6 +562,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   onClick={() => {
                     setApproveRemarks("");
                     setApproveError("");
+                    setApproveFiles([]);
                     setModalType("approve");
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition shadow-2xs cursor-pointer"
@@ -568,6 +575,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                     setClarifyText("");
                     setClarifyComments("");
                     setClarifyError("");
+                    setClarifyFiles([]);
                     setModalType("clarify");
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition shadow-2xs cursor-pointer"
@@ -583,6 +591,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                     setReassignDeadline(minDeadlineISO());
                     setReassignReason("");
                     setReassignErrors({});
+                    setReassignFiles([]);
                     setModalType("reassign");
                   }}
                   disabled={(req.reassignCount || 0) >= 2}
@@ -725,7 +734,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                     }`}
                 ></i>
                 <span>
-                  {req.decision.type === "Approved" ? "Official Executive Approval" : "Formally Rejected"}{" "}
+                  {req.decision.type === "Approved" ? "Approved" : "Formally Rejected"}{" "}
                   by {req.decision.by}
                 </span>
               </span>
@@ -1006,7 +1015,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      <span>Discussion &amp; Comments</span>
+                      <span> Comments</span>
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
                         {(req.comments || []).length}
                       </span>
@@ -1359,12 +1368,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
 
                   </div>
                 </div>
-                <div className="text-[11px] pt-1.5 border-t border-slate-200/60">
-                  <span className="text-slate-500 block">CC Notification Email</span>
-                  <span className="font-mono text-slate-700 truncate block">
-                    {req.ccEmail || "admin.governance@srmtech.com"}
-                  </span>
-                </div>
+
               </div>
 
               {/* Assigned Approver */}
@@ -1383,10 +1387,18 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                     <p className="text-[11px] text-slate-600 font-mono truncate mt-0.5">
                       {req.approverEmail || "priya.nair.hospital@example.com"}
                     </p>
+
                     {/* <p className="text-[11px] text-slate-500 mt-1">
                       Deadline Date: <b className="text-slate-800 font-semibold">{fmtDate(req.deadline)}</b>
                     </p> */}
                   </div>
+
+                </div>
+                <div className="text-[11px] pt-1.5 border-t border-slate-200/60">
+                  <span className="text-slate-500 block">CC Notification Email</span>
+                  <span className="font-mono text-slate-700 truncate block">
+                    {req.ccEmail || "admin.governance@srmtech.com"}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1512,10 +1524,10 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       {/* Approve Modal */}
       {modalType === "approve" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0">
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <i className="fa-solid fa-circle-check text-emerald-600"></i> Approve Request
+                <i className="fa-solid fa-circle-check text-emerald-600"></i> Approve
               </h3>
               <button
                 onClick={() => setModalType(null)}
@@ -1525,9 +1537,9 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
               </button>
             </div>
 
-            <form onSubmit={handleApproveSubmit} className="p-5 space-y-4">
-              <p className="text-xs text-slate-500">
-                {req.number || req.id} · {req.title} (Revision v{req.version || 1})
+            <form onSubmit={handleApproveSubmit} className="p-5 space-y-4 flex-1 overflow-y-auto flex flex-col">
+              <p className="text-xs text-slate-500 shrink-0">
+                {req.title}
               </p>
 
               <div>
@@ -1548,7 +1560,14 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 {approveError && <p className="text-xs text-rose-600 mt-1">{approveError}</p>}
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              {/* Supporting Document Attachment */}
+              <ActionAttachmentSection
+                files={approveFiles}
+                onChange={setApproveFiles}
+                disabled={isSubmittingApprove}
+              />
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 shrink-0">
                 <button
                   type="button"
                   onClick={() => setModalType(null)}
@@ -1567,7 +1586,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                       <i className="fa-solid fa-spinner fa-spin"></i> Approving...
                     </>
                   ) : (
-                    "Confirm Approval"
+                    "Approve"
                   )}
                 </button>
               </div>
@@ -1579,8 +1598,8 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       {/* Reject Modal */}
       {modalType === "reject" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0">
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <i className="fa-solid fa-circle-xmark text-rose-600"></i> Reject Request
               </h3>
@@ -1592,14 +1611,14 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
               </button>
             </div>
 
-            <form onSubmit={handleRejectSubmit} className="p-5 space-y-4">
-              <p className="text-xs text-slate-500">
+            <form onSubmit={handleRejectSubmit} className="p-5 space-y-4 flex-1 overflow-y-auto flex flex-col">
+              <p className="text-xs text-slate-500 shrink-0">
                 {req.number || req.id} · {req.title} (Revision v{req.version || 1})
               </p>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Reason for Rejection
+                  Reason for Rejection <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   value={rejectReason}
@@ -1615,24 +1634,14 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 {rejectError && <p className="text-xs text-rose-600 mt-1">{rejectError}</p>}
               </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Supporting Documentation <span className="text-slate-400 font-normal">(Optional)</span>
-                </label>
-                <input
-                  type="file"
-                  multiple
-                  onChange={(e) => {
-                    if (e.target.files) {
-                      setRejectFiles(Array.from(e.target.files));
-                    }
-                  }}
-                  className="w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
-                />
-                <p className="text-[11px] text-slate-400 mt-1">Allowed: PDF, DOCX, XLSX, Images up to 10MB each.</p>
-              </div>
+              {/* Supporting Document Attachment */}
+              <ActionAttachmentSection
+                files={rejectFiles}
+                onChange={setRejectFiles}
+                disabled={isSubmittingReject}
+              />
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 shrink-0">
                 <button
                   type="button"
                   onClick={() => setModalType(null)}
@@ -1663,8 +1672,8 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       {/* Seek Clarification Modal */}
       {modalType === "clarify" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0">
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <i className="fa-solid fa-circle-question text-amber-500"></i> Seek Clarification
               </h3>
@@ -1676,8 +1685,8 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
               </button>
             </div>
 
-            <form onSubmit={handleClarifySubmit} className="p-5 space-y-4">
-              <p className="text-xs text-slate-500">
+            <form onSubmit={handleClarifySubmit} className="p-5 space-y-4 flex-1 overflow-y-auto flex flex-col">
+              <p className="text-xs text-slate-500 shrink-0">
                 The proposal will be routed back to <b>{req.nominee || "requester"}</b> with status{" "}
                 <b className="text-amber-700">CLARIFICATION REQUIRED</b>. Approver review pauses until resubmitted.
               </p>
@@ -1715,7 +1724,14 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 {clarifyError && <p className="text-xs text-rose-600 mt-1">{clarifyError}</p>}
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              {/* Supporting Document Attachment */}
+              <ActionAttachmentSection
+                files={clarifyFiles}
+                onChange={setClarifyFiles}
+                disabled={isSubmittingClarify}
+              />
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 shrink-0">
                 <button
                   type="button"
                   onClick={() => setModalType(null)}
@@ -1746,8 +1762,8 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
       {/* Re-assign Modal */}
       {modalType === "reassign" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0">
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <i className="fa-solid fa-user-gear text-indigo-600"></i> Re-assign to Other Approver (Max 2 Allowed)
               </h3>
@@ -1759,14 +1775,14 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
               </button>
             </div>
 
-            <form onSubmit={handleReassignSubmit} className="p-5 space-y-3">
-              <p className="text-xs text-slate-500">
+            <form onSubmit={handleReassignSubmit} className="p-5 space-y-3 flex-1 overflow-y-auto flex flex-col">
+              <p className="text-xs text-slate-500 shrink-0">
                 Re-route approval responsibility to another executive. The request reference receives an audit
                 revision suffix (Used: <b>{req.reassignCount || 0} of 2</b> delegations).
               </p>
 
               {reassignErrors.form && (
-                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 shrink-0">
                   {reassignErrors.form}
                 </div>
               )}
@@ -1866,7 +1882,14 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 {reassignErrors.reason && <p className="text-xs text-rose-600 mt-1">{reassignErrors.reason}</p>}
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              {/* Supporting Document Attachment */}
+              <ActionAttachmentSection
+                files={reassignFiles}
+                onChange={setReassignFiles}
+                disabled={isSubmittingReassign}
+              />
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 shrink-0">
                 <button
                   type="button"
                   onClick={() => setModalType(null)}

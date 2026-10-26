@@ -1,12 +1,14 @@
 // src/pages/auth/Login/LoginPage.tsx
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import srmLogo from "../../../assets/images/srm_login_logo.png";
-import cupImg from "../../../assets/images/login_cup_img.png";
 import loginBg from "../../../assets/images/login_left_img.png";
 import { USER_ROLES, type UserRole } from "../../../dataTypes/roles";
 import { toast } from "sonner";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Mail } from "lucide-react";
+import { emailService } from "@/services/emailService";
+import { OTP_EMAIL_CONFIG } from "@/templates/email/otpEmailTemplate";
+import { OtpEmailPreviewModal } from "@/components/auth/OtpEmailPreviewModal";
 
 interface LoginProps {
   setUserRole: React.Dispatch<React.SetStateAction<UserRole | null | undefined>>;
@@ -21,10 +23,12 @@ export default function LoginPage({ setUserRole }: LoginProps) {
   const [otp, setOtp] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isEmailPreviewOpen, setIsEmailPreviewOpen] = useState(false);
 
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // Helper to authenticate user
+  // Helper to authenticate user and redirect to intended destination
   const authenticateUser = (targetEmail: string, targetRole: UserRole) => {
     localStorage.setItem("userRole", targetRole);
     localStorage.setItem("userEmail", targetEmail);
@@ -38,7 +42,13 @@ export default function LoginPage({ setUserRole }: LoginProps) {
     localStorage.setItem("srm_ap_session", JSON.stringify({ email: targetEmail, role: targetRole, name: targetName }));
     setUserRole(targetRole);
 
-    navigate("/home");
+    // If redirected from a deep link/protected route (e.g. from an email "View Request" link),
+    // return directly to that destination instead of the generic dashboard
+    const fromState = (location.state as any)?.from;
+    const returnPath = fromState ? `${fromState.pathname || ""}${fromState.search || ""}` : null;
+    const targetPath = returnPath && returnPath !== "/" ? returnPath : "/home";
+
+    navigate(targetPath, { replace: true });
   };
 
   const resolveRole = (targetEmail: string, targetPassword?: string): UserRole | null => {
@@ -96,9 +106,20 @@ export default function LoginPage({ setUserRole }: LoginProps) {
       if (role) {
         // Valid credentials -> Transition to Step 2 OTP Verification
         setStep("otp");
-        setOtp("1111");
+        const generatedOtp = "1111"; // Prototype mock OTP
+        setOtp(generatedOtp);
         setError(null);
-        toast.info("A verification OTP has been sent to your registered email address.");
+
+        // Integration Point: Dispatches the branded HTML email template for login OTP verification.
+        // In production, this integrates with the organization's SMTP relay or transactional email provider.
+        emailService.sendOtpEmail({
+          to: cleanEmail,
+          otp: generatedOtp,
+          expiryMinutes: OTP_EMAIL_CONFIG.DEFAULT_EXPIRY_MINUTES,
+          recipientName: cleanEmail.split("@")[0],
+        });
+
+        toast.info("A verification OTP has been dispatched to your registered email address.");
       } else {
         setError("Invalid email address or password.");
       }
@@ -132,9 +153,19 @@ export default function LoginPage({ setUserRole }: LoginProps) {
 
   const handleResendOtp = () => {
     const target = email.trim() || "user@srmtech.com";
-    setOtp("1111");
+    const generatedOtp = "1111";
+    setOtp(generatedOtp);
     setError(null);
-    toast.info(`A verification OTP (1111) has been resent to ${target}.`);
+
+    // Integration Point: Re-dispatch HTML email template with fresh OTP
+    emailService.sendOtpEmail({
+      to: target,
+      otp: generatedOtp,
+      expiryMinutes: OTP_EMAIL_CONFIG.DEFAULT_EXPIRY_MINUTES,
+      recipientName: target.split("@")[0],
+    });
+
+    toast.info(`A verification OTP (${generatedOtp}) has been resent to ${target}.`);
   };
 
   const fillDemoAccount = (demoEmail: string, demoPwd: string = "123") => {
@@ -144,12 +175,21 @@ export default function LoginPage({ setUserRole }: LoginProps) {
   };
 
   const switchToOtpFlow = () => {
+    const target = email.trim() || "user@srmtech.com";
     if (!email.trim()) {
       setEmail("user@srmtech.com");
     }
-    setOtp("1111");
+    const generatedOtp = "1111";
+    setOtp(generatedOtp);
     setError(null);
     setStep("otp");
+
+    emailService.sendOtpEmail({
+      to: target,
+      otp: generatedOtp,
+      expiryMinutes: OTP_EMAIL_CONFIG.DEFAULT_EXPIRY_MINUTES,
+      recipientName: target.split("@")[0],
+    });
   };
 
   return (
@@ -178,14 +218,8 @@ export default function LoginPage({ setUserRole }: LoginProps) {
 
         {/* Center Promotional Graphic and Copy */}
         <div className="relative z-10 my-auto py-10 sm:py-16">
-          <img
-            src={cupImg}
-            alt="Excellence Trophy"
-            className="w-24 sm:w-28 lg:w-32 h-auto object-contain mb-8 drop-shadow-2xl"
-          />
           <h1 className="text-3xl sm:text-4xl lg:text-[40px] font-bold text-white tracking-tight leading-tight mb-4">
             Welcome to the Easy Approve <br className="hidden sm:inline" />
-
           </h1>
           <p className="text-sm sm:text-base text-white/90 leading-relaxed max-w-lg font-normal">
             Discover, manage, and streamline approvals with EasyApprove.
@@ -206,12 +240,24 @@ export default function LoginPage({ setUserRole }: LoginProps) {
         <div className="w-full max-w-[420px]">
           {step === "credentials" ? (
             <div>
-              {/* Heading */}
-              <div className="text-center mb-8">
-                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mb-1.5">
-                  Welcome Back!
-                </h2>
-                <p className="text-sm text-slate-500">Sign in to your account</p>
+              {/* Heading with Mail Icon to Preview OTP Email Template */}
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mb-1">
+                    Welcome Back!
+                  </h2>
+                  <p className="text-sm text-slate-500">Sign in to your account</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsEmailPreviewOpen(true)}
+                  className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-emerald-50 hover:border-emerald-300 text-slate-600 hover:text-emerald-700 shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
+                  title="Preview OTP Verification Email Template"
+                  aria-label="Preview OTP Verification Email Template"
+                >
+                  <Mail className="w-4 h-4 text-emerald-600" />
+                  <span className="hidden sm:inline text-xs font-semibold">Preview Email</span>
+                </button>
               </div>
 
               {error && (
@@ -320,7 +366,7 @@ export default function LoginPage({ setUserRole }: LoginProps) {
                 </div>
               </form>
 
-              {/* Quick One-Click Demo Access Box (Preserves testing ease) */}
+              {/* Quick One-Click Demo Access Box */}
               <div className="mt-8 pt-5 border-t border-slate-100">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
@@ -345,38 +391,66 @@ export default function LoginPage({ setUserRole }: LoginProps) {
                     <span className="text-amber-700 font-semibold block truncate">Approver</span>
                     <span className="text-[10px] text-slate-500 block truncate">approver@...</span>
                   </button>
-                  <button
+                  {/* <button
                     type="button"
                     onClick={() => fillDemoAccount("admin@srmtech.com", "123")}
                     className="p-2 border border-slate-200 bg-slate-50/70 hover:bg-slate-100/70 rounded-lg text-left text-xs font-medium transition cursor-pointer text-slate-700 truncate"
                   >
                     <span className="text-blue-700 font-semibold block truncate">Admin</span>
                     <span className="text-[10px] text-slate-500 block truncate">admin@srmtech.com</span>
-                  </button>
+                  </button> */}
                 </div>
               </div>
             </div>
           ) : (
             /* STEP 2: OTP Verification Screen */
             <div>
-              <div className="mb-6 text-center">
-                <h2 className="text-2xl font-bold tracking-tight text-slate-900 mb-1">
-                  Two-Factor Authentication
-                </h2>
-                <p className="text-xs text-slate-500">Enter the verification code to continue</p>
+              <div className="mb-6 flex items-center justify-between">
+                <div className="text-left">
+                  <h2 className="text-2xl font-bold tracking-tight text-slate-900 mb-1">
+                    Two-Factor Authentication
+                  </h2>
+                  <p className="text-xs text-slate-500">Enter the verification code to continue</p>
+                </div>
+                {/* Mail Icon at top of OTP area */}
+                <button
+                  type="button"
+                  onClick={() => setIsEmailPreviewOpen(true)}
+                  className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-emerald-50 hover:border-emerald-300 text-slate-600 hover:text-emerald-700 shadow-2xs transition-colors cursor-pointer flex items-center gap-1.5"
+                  title="Preview OTP Verification Email Template"
+                  aria-label="Preview OTP Verification Email Template"
+                >
+                  <Mail className="w-4 h-4 text-emerald-600" />
+                  <span className="hidden sm:inline text-xs font-semibold">Email Preview</span>
+                </button>
               </div>
 
-              {/* Email Notification Notice */}
-              <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-100 text-slate-700 mb-4">
-                <div className="text-xs space-y-1">
+              {/* Email Notification Notice with Dynamic Expiry and Security Advisory */}
+              {/* <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-100 text-slate-700 mb-4">
+                <div className="text-xs space-y-1.5">
                   <p className="font-medium text-slate-800">
-                    A verification OTP has been sent to:
+                    A verification OTP has been dispatched to:
                   </p>
                   <p className="font-mono text-emerald-800 font-semibold truncate">
                     {email || "user@srmtech.com"}
                   </p>
+                  <div className="pt-2 border-t border-emerald-100/80 flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Valid duration: <strong className="text-emerald-700">{OTP_EMAIL_CONFIG.DEFAULT_EXPIRY_MINUTES} mins</strong></span>
+                    <button
+                      type="button"
+                      onClick={() => setIsEmailPreviewOpen(true)}
+                      className="text-emerald-700 hover:text-emerald-900 font-semibold underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Mail size={12} /> View HTML Email Template
+                    </button>
+                  </div>
                 </div>
-              </div>
+              </div> */}
+
+              {/* Security Advisory */}
+              {/* <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 mb-4 text-[11px] text-slate-600 leading-relaxed">
+                <strong className="text-slate-800">Security Note:</strong> Do not share this OTP with anyone. EasyApprove administrators will never ask for your code.
+              </div> */}
 
               {/* Testing Prototype Notice */}
               <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200/80 mb-4 flex items-center justify-between text-xs text-amber-900">
@@ -452,7 +526,13 @@ export default function LoginPage({ setUserRole }: LoginProps) {
           )}
         </div>
       </div>
+
+      {/* OTP Email Template Preview Modal */}
+      <OtpEmailPreviewModal
+        isOpen={isEmailPreviewOpen}
+        onClose={() => setIsEmailPreviewOpen(false)}
+        recipientEmail={email}
+      />
     </div>
   );
 }
-

@@ -466,14 +466,18 @@ const NominationTable: React.FC<NominationTableProps> = ({
         header: "Actions",
         cell: ({ row }) => {
           const r = row.original;
+          const s = ((r.status as string) || "").toLowerCase();
           const isPending =
-            r.status === "Pending" ||
-            r.status === "In Review" ||
-            r.status === "Under Review";
-          const canWithdraw =
-            r.status !== "Approved" &&
-            r.status !== "Rejected" &&
-            (r.status as string) !== "Withdrawn";
+            s === "pending" ||
+            s === "in review" ||
+            s === "under review";
+          const isCompleted =
+            s === "approved" ||
+            s === "rejected" ||
+            s.includes("withdraw") ||
+            s === "completed";
+          const canModify = !isCompleted;
+          const canWithdraw = !isCompleted;
 
           return (
             <div className="flex items-center justify-center w-full">
@@ -496,13 +500,17 @@ const NominationTable: React.FC<NominationTableProps> = ({
                         },
                       ]
                     : []),
-                  {
-                    label: "Modify Request",
-                    icon: (
-                      <i className="fa-solid fa-pen-to-square text-blue-500 mr-2"></i>
-                    ),
-                    onClick: () => handleModifyRequest(r),
-                  },
+                  ...(canModify
+                    ? [
+                        {
+                          label: "Modify Request",
+                          icon: (
+                            <i className="fa-solid fa-pen-to-square text-blue-500 mr-2"></i>
+                          ),
+                          onClick: () => handleModifyRequest(r),
+                        },
+                      ]
+                    : []),
                   ...(canWithdraw
                     ? [
                         {

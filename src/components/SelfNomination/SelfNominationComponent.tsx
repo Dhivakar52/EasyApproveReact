@@ -105,6 +105,14 @@ export default function SelfNominationComponent() {
       return;
     }
 
+    const statusLower = (found.status || '').toLowerCase();
+    const isCompleted = ['approved', 'rejected', 'withdrawn', 'completed', 'cancelled'].includes(statusLower);
+    if (isCompleted) {
+      toast.error(`Request ${found.number || id} is already ${found.status} and cannot be modified.`);
+      navigate(`/my-nominations/${found.number || found.id}`);
+      return;
+    }
+
     setEditReq(found);
     const initialGroup = found.entity || found.department || '';
     setGroup(initialGroup);
@@ -493,11 +501,11 @@ export default function SelfNominationComponent() {
                 <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
                   {isEditMode ? (
                     <>
-                      Editing proposal{' '}
+                      {/* Editing proposal{' '}
                       <span className="font-mono font-bold text-slate-800">
                         {editReq?.number || editReq?.id}
                       </span>{' '}
-                      (Revision v{editReq?.version || 1}). Resubmission will increment revision state and notify stakeholders.
+                      (Revision v{editReq?.version || 1}). Resubmission will increment revision state and notify stakeholders. */}
                     </>
                   ) : (
                     'Submit a formal expenditure, travel, or process approval request into the multi-stage corporate governance chain.'

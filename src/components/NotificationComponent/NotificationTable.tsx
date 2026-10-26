@@ -188,6 +188,7 @@ export const NotificationTable: React.FC = () => {
           const isUnread = !n.read;
           const typeText = n.type || n.title || "Notification";
           const cfg = getStatusConfig(typeText);
+          const displayType = cfg.key === "approved" ? "Approved" : typeText;
 
           return (
             <div className="flex items-center gap-2 whitespace-nowrap">
@@ -201,7 +202,7 @@ export const NotificationTable: React.FC = () => {
                 className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${cfg.badgeClass}`}
               >
                 <i className={`${cfg.iconClass} text-[10px]`} />
-                {typeText}
+                {displayType}
               </span>
             </div>
           );

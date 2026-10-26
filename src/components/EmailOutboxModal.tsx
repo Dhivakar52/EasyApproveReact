@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { X, Mail, CheckCircle2, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { X, Mail, CheckCircle2, Clock, ExternalLink } from 'lucide-react';
+import { emailService, type OutboxEmailRecord } from '@/services/emailService';
 
 interface EmailOutboxModalProps {
   isOpen: boolean;
@@ -13,45 +15,53 @@ interface SimulatedEmail {
   date: string;
   status: 'Delivered' | 'Pending';
   preview: string;
+  htmlContent?: string;
+  requestId?: string;
+  requestUrl?: string;
 }
 
 export const EmailOutboxModal: React.FC<EmailOutboxModalProps> = ({ isOpen, onClose }) => {
-  const [selectedEmail, setSelectedEmail] = useState<SimulatedEmail | null>(null);
+  const navigate = useNavigate();
+  const [selectedEmail, setSelectedEmail] = useState<OutboxEmailRecord | SimulatedEmail | null>(null);
+  const [viewMode, setViewMode] = useState<'html' | 'summary'>('html');
 
   if (!isOpen) return null;
 
-  const emails: SimulatedEmail[] = [
-    {
-      id: 'EML-1092',
-      to: 'approver@srmtech.com',
-      subject: 'Action Required: Travel Expenses approval request #REQ-2026-081',
-      date: 'Just now',
-      status: 'Delivered',
-      preview: 'A new travel expense request from Ravi Kumar requires your executive review. Click here to open and sign off on the decision trail.',
-    },
-    {
-      id: 'EML-1091',
-      to: 'requester@srmtech.com',
-      subject: 'Status Update: Project Innovation Award approved by Executive Board',
-      date: '2 hours ago',
-      status: 'Delivered',
-      preview: 'Congratulations! Your Project Excellence submission has passed final stage sign-off and is marked as Officially Approved.',
-    },
-    {
-      id: 'EML-1090',
-      to: 'stakeholder@srmtech.com',
-      subject: 'Audit Trail Notification: Request #REQ-2026-079 reassigned',
-      date: 'Yesterday',
-      status: 'Delivered',
-      preview: 'The approval item #REQ-2026-079 was reassigned to Dr. Priya Nair under vertical compliance procedures.',
-    },
-  ];
+  const emails = emailService.getOutbox();
+  const activeEmail: OutboxEmailRecord | SimulatedEmail = selectedEmail || emails[0] || {
+    id: 'EML-1000',
+    to: 'approver@srmtech.com',
+    subject: 'Approval Request Notification',
+    date: 'Just now',
+    status: 'Delivered',
+    preview: 'No recent emails found in delivery outbox.',
+  };
 
-  const activeEmail = selectedEmail || emails[0];
+  const handleNavigateToRequest = (targetUrl?: string, targetId?: string) => {
+    onClose();
+    if (targetUrl) {
+      if (targetUrl.startsWith('/')) {
+        navigate(targetUrl);
+        return;
+      }
+      try {
+        const parsed = new URL(targetUrl);
+        navigate(parsed.pathname + parsed.search);
+        return;
+      } catch {
+        // Fallback
+      }
+    }
+    if (targetId) {
+      navigate(`/request/${targetId}`);
+    }
+  };
+
+  const hasRequestNav = Boolean(activeEmail.requestUrl || activeEmail.requestId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl h-[560px] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl h-[620px] max-h-[92vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-3">
@@ -60,13 +70,14 @@ export const EmailOutboxModal: React.FC<EmailOutboxModalProps> = ({ isOpen, onCl
             </div>
             <div>
               <h3 className="font-bold text-slate-900 text-base">Email Delivery Outbox &amp; Action Log</h3>
-              <p className="text-xs text-slate-500">Sent enterprise workflow notifications and direct action links</p>
+              <p className="text-xs text-slate-500">Sent enterprise workflow notifications and direct request action links</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition cursor-pointer"
+            aria-label="Close Outbox"
           >
             <X size={18} />
           </button>
@@ -102,36 +113,101 @@ export const EmailOutboxModal: React.FC<EmailOutboxModalProps> = ({ isOpen, onCl
           </div>
 
           {/* Detail Preview Column */}
-          <div className="w-3/5 p-6 flex flex-col justify-between overflow-y-auto bg-slate-50/50">
-            <div>
-              <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <CheckCircle2 size={12} /> {activeEmail.status}
-                </span>
-                <span className="text-xs font-mono text-slate-400">{activeEmail.id}</span>
+          <div className="w-3/5 flex flex-col justify-between overflow-y-auto bg-slate-50/50">
+            <div className="p-5 flex-1 flex flex-col">
+              {/* Header Status & Direct View Request Action */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-3 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <CheckCircle2 size={12} /> {activeEmail.status}
+                  </span>
+                  <span className="text-xs font-mono text-slate-400">{activeEmail.id}</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {hasRequestNav && (
+                    <button
+                      type="button"
+                      onClick={() => handleNavigateToRequest(activeEmail.requestUrl, activeEmail.requestId)}
+                      className="px-3 py-1.5 rounded-lg bg-[#008744] hover:bg-[#00733a] text-white text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>View Request</span>
+                      <ExternalLink size={12} />
+                    </button>
+                  )}
+
+                  {activeEmail.htmlContent && (
+                    <div className="flex items-center p-0.5 rounded-lg bg-slate-200/80 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('html')}
+                        className={`px-2 py-1 rounded text-[11px] font-medium transition cursor-pointer ${
+                          viewMode === 'html' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        HTML
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('summary')}
+                        className={`px-2 py-1 rounded text-[11px] font-medium transition cursor-pointer ${
+                          viewMode === 'summary' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Text
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="space-y-2 mb-4">
-                <p className="text-xs text-slate-500">
+              {/* Recipient Meta */}
+              <div className="space-y-1 mb-3 text-xs">
+                <p className="text-slate-500">
                   <strong className="text-slate-700">Recipient:</strong> {activeEmail.to}
                 </p>
-                <p className="text-xs text-slate-500">
-                  <strong className="text-slate-700">Sent:</strong> {activeEmail.date}
-                </p>
-                <h4 className="text-sm font-bold text-slate-900 mt-2">{activeEmail.subject}</h4>
+                <h4 className="text-sm font-bold text-slate-900 truncate">{activeEmail.subject}</h4>
               </div>
 
-              <div className="p-4 rounded-xl bg-white border border-slate-200 text-xs text-slate-700 leading-relaxed shadow-xs">
-                {activeEmail.preview}
-              </div>
+              {/* Body: HTML Iframe or Summary */}
+              {activeEmail.htmlContent && viewMode === 'html' ? (
+                <div className="flex-1 min-h-[300px] bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+                  <iframe
+                    title="Email Preview"
+                    srcDoc={activeEmail.htmlContent}
+                    className="w-full h-full border-0"
+                    sandbox="allow-same-origin allow-scripts"
+                  />
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-white border border-slate-200 text-xs text-slate-700 leading-relaxed shadow-xs flex-1">
+                  <div className="font-semibold text-slate-800 mb-2">Message Body</div>
+                  <p>{activeEmail.preview}</p>
+                  {hasRequestNav && (
+                    <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+                      <span className="text-slate-500 font-mono text-[11px]">
+                        Target ID: {activeEmail.requestId || '—'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleNavigateToRequest(activeEmail.requestUrl, activeEmail.requestId)}
+                        className="text-[#008744] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        Open Request Details &rarr;
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
+            {/* Outbox Footer */}
+            <div className="px-5 py-3 border-t border-slate-200 bg-white flex items-center justify-between">
               <span className="text-[11px] text-slate-400">SRM Technologies Delivery Engine</span>
               <button
                 type="button"
                 onClick={onClose}
-                className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer flex items-center gap-1.5"
+                className="px-3.5 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-100 transition cursor-pointer"
               >
                 Close Outbox
               </button>
