@@ -1538,13 +1538,13 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
             </div>
 
             <form onSubmit={handleApproveSubmit} className="p-5 space-y-4 flex-1 overflow-y-auto flex flex-col">
-              <p className="text-xs text-slate-500 shrink-0">
+              {/* <p className="text-xs text-slate-500 shrink-0">
                 {req.title}
-              </p>
+              </p> */}
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Approval Comments &amp; Authorization Justification
+                  Approval Comments
                 </label>
                 <textarea
                   value={approveRemarks}
@@ -1553,7 +1553,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                     setApproveError("");
                   }}
                   rows={4}
-                  placeholder="e.g. Reviewed line items and confirmed compliance with departmental allocations."
+                  placeholder="Enter a Comments"
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 outline-none"
                   required
                 />
@@ -1612,9 +1612,9 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
             </div>
 
             <form onSubmit={handleRejectSubmit} className="p-5 space-y-4 flex-1 overflow-y-auto flex flex-col">
-              <p className="text-xs text-slate-500 shrink-0">
+              {/* <p className="text-xs text-slate-500 shrink-0">
                 {req.number || req.id} · {req.title} (Revision v{req.version || 1})
-              </p>
+              </p> */}
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
@@ -1627,7 +1627,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                     setRejectError("");
                   }}
                   rows={4}
-                  placeholder="Specify why this request cannot be approved at this time..."
+                  placeholder="Enter a Comments"
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-rose-600 focus:ring-1 focus:ring-rose-600 outline-none"
                   required
                 />
@@ -1686,14 +1686,14 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
             </div>
 
             <form onSubmit={handleClarifySubmit} className="p-5 space-y-4 flex-1 overflow-y-auto flex flex-col">
-              <p className="text-xs text-slate-500 shrink-0">
+              {/* <p className="text-xs text-slate-500 shrink-0">
                 The proposal will be routed back to <b>{req.nominee || "requester"}</b> with status{" "}
                 <b className="text-amber-700">CLARIFICATION REQUIRED</b>. Approver review pauses until resubmitted.
-              </p>
+              </p> */}
 
-              <div>
+              {/* <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Comments / Information that must be added or modified
+                  Comments
                 </label>
                 <textarea
                   value={clarifyComments}
@@ -1704,11 +1704,11 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   placeholder="Specify the missing vendor quotes, invoice details, or budget breakdowns..."
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
                 />
-              </div>
+              </div> */}
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                  Clarification Instructions / Inquiry <span className="text-rose-500">*</span>
+                  Comments<span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   value={clarifyText}
@@ -1776,10 +1776,10 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
             </div>
 
             <form onSubmit={handleReassignSubmit} className="p-5 space-y-3 flex-1 overflow-y-auto flex flex-col">
-              <p className="text-xs text-slate-500 shrink-0">
+              {/* <p className="text-xs text-slate-500 shrink-0">
                 Re-route approval responsibility to another executive. The request reference receives an audit
                 revision suffix (Used: <b>{req.reassignCount || 0} of 2</b> delegations).
-              </p>
+              </p> */}
 
               {reassignErrors.form && (
                 <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 shrink-0">
@@ -1875,7 +1875,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                   value={reassignReason}
                   onChange={(e) => setReassignReason(e.target.value)}
                   rows={2.5}
-                  placeholder="State reason for delegation (e.g. out of office, budget threshold escalation)..."
+                  placeholder="Enter a Comments"
                   className="w-full text-xs border border-slate-300 rounded-lg p-2.5 outline-none focus:border-indigo-600"
                   required
                 />

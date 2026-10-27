@@ -6,6 +6,9 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  HelpCircle,
+  Ban,
+  FileEdit,
   ChevronRight,
   AlertTriangle,
   Send,
@@ -32,6 +35,20 @@ const getDaysLeft = (deadlineStr?: string) => {
   }
 };
 
+const categorizeStatus = (
+  status?: string
+): 'pending' | 'approved' | 'rejected' | 'clarification' | 'withdrawn' | 'modification' | 'other' => {
+  const s = (status || '').trim().toLowerCase();
+  if (!s) return 'other';
+  if (s.includes('withdraw')) return 'withdrawn';
+  if (s.includes('clarif') || s === 'seek clarification') return 'clarification';
+  if (s.includes('modify') || s.includes('modification')) return 'modification';
+  if (s === 'approved') return 'approved';
+  if (s === 'rejected') return 'rejected';
+  if (s === 'pending' || s === 'pending approval' || s === 'in review' || s === 'under review') return 'pending';
+  return 'other';
+};
+
 export const DashboardComponent: React.FC = () => {
   const navigate = useNavigate();
   const [nominations, setNominations] = useState<Nomination[]>(() =>
@@ -47,54 +64,36 @@ export const DashboardComponent: React.FC = () => {
   const [myRequestsSearch] = useState('');
   const myRequestsPageSize = 5;
 
-  const userRole = ((localStorage.getItem('userRole') || 'user').toLowerCase() as UserRole);
-  const userEmail = (localStorage.getItem('userEmail') || 'user@srmtech.com').toLowerCase().trim();
+  const [userRole, setUserRole] = useState<UserRole>(() =>
+    ((localStorage.getItem('userRole') || 'user').toLowerCase() as UserRole)
+  );
+  const [userEmail, setUserEmail] = useState<string>(() =>
+    (localStorage.getItem('userEmail') || 'user@srmtech.com').toLowerCase().trim()
+  );
 
   useEffect(() => {
+    // Immediately synchronize with latest stored nominations on mount
+    setNominations(nominationService.getNominations());
+
     const handleUpdate = () => {
       setNominations(nominationService.getNominations());
+      setUserRole(((localStorage.getItem('userRole') || 'user').toLowerCase() as UserRole));
+      setUserEmail((localStorage.getItem('userEmail') || 'user@srmtech.com').toLowerCase().trim());
     };
+
     window.addEventListener('easyapprove_nominations_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    window.addEventListener('focus', handleUpdate);
     return () => {
       window.removeEventListener('easyapprove_nominations_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+      window.removeEventListener('focus', handleUpdate);
     };
   }, []);
 
   // Filter nominations according to authenticated user role
   const roleNominations = useMemo(() => {
-    if (userRole === 'admin') {
-      return nominations;
-    }
-
-    if (userRole === 'approver') {
-      return nominations.filter((r) => {
-        const appEmail = (r.approverEmail || r.managerEmail || '').toLowerCase().trim();
-        const appName = (r.approverName || r.assignedEmployee || '').toLowerCase().trim();
-        const isApprover =
-          appEmail === userEmail ||
-          (userEmail.includes('approver') &&
-            (appName.includes('approver') || appName.includes('karthik') || appEmail.includes('approver')));
-        const isReassignedToUser = (r.reassignments || []).some(
-          (re) => re.toEmail?.toLowerCase().trim() === userEmail
-        );
-        const isHistoryNewOwner = (r.reassignmentHistory || []).some(
-          (rh) => rh.newOwner?.toLowerCase().trim() === userEmail
-        );
-        return isApprover || isReassignedToUser || isHistoryNewOwner;
-      });
-    }
-
-    // Default 'user' role: requests authored by user or user is nominee
-    return nominations.filter((r) => {
-      const reqEmail = (r.requesterEmail || r.nomineeEmail || '').toLowerCase().trim();
-      const origSubmitter = (r.originalSubmitter || '').toLowerCase().trim();
-      const reqName = (r.requesterName || r.nominee || '').toLowerCase().trim();
-      return (
-        reqEmail === userEmail ||
-        origSubmitter === userEmail ||
-        (userEmail.includes('user') && (reqName.includes('user') || reqEmail.includes('user')))
-      );
-    });
+    return nominationService.getRoleScopedNominations(nominations, userEmail, userRole);
   }, [nominations, userRole, userEmail]);
 
   // Current date for deadline calculations
@@ -160,60 +159,7 @@ export const DashboardComponent: React.FC = () => {
   // -------------------------------------------------------------
   const myRequests = useMemo(() => {
     // 1. Filter only requests created by the logged-in user
-    const userCreated = nominations.filter((r) => {
-      const reqEmail = (r.requesterEmail || r.nomineeEmail || '').toLowerCase().trim();
-      const origSubmitter = (r.originalSubmitter || '').toLowerCase().trim();
-      const reqName = (r.requesterName || r.nominee || '').toLowerCase().trim();
-
-      if (reqEmail === userEmail || origSubmitter === userEmail) return true;
-
-      if (
-        userEmail === 'user@srmtech.com' ||
-        userEmail === 'user@gmail.com' ||
-        userEmail.startsWith('user@')
-      ) {
-        return (
-          reqEmail === 'user@srmtech.com' ||
-          reqEmail === 'user@gmail.com' ||
-          origSubmitter === 'user@srmtech.com' ||
-          origSubmitter === 'user@gmail.com' ||
-          reqName === 'demo user' ||
-          reqName === 'user'
-        );
-      }
-
-      if (
-        userEmail === 'approver@srmtech.com' ||
-        userEmail === 'approver@gmail.com' ||
-        userEmail.startsWith('approver@')
-      ) {
-        return (
-          reqEmail === 'approver@srmtech.com' ||
-          reqEmail === 'approver@gmail.com' ||
-          origSubmitter === 'approver@srmtech.com' ||
-          origSubmitter === 'approver@gmail.com' ||
-          reqName === 'demo approver' ||
-          reqName === 'approver'
-        );
-      }
-
-      if (
-        userEmail === 'admin@srmtech.com' ||
-        userEmail === 'admin@gmail.com' ||
-        userEmail.startsWith('admin@')
-      ) {
-        return (
-          reqEmail === 'admin@srmtech.com' ||
-          reqEmail === 'admin@gmail.com' ||
-          origSubmitter === 'admin@srmtech.com' ||
-          origSubmitter === 'admin@gmail.com' ||
-          reqName === 'demo admin' ||
-          reqName === 'admin'
-        );
-      }
-
-      return false;
-    });
+    const userCreated = nominationService.filterMyRequests(nominations, userEmail, userRole);
 
     // 2. Filter for overdue pending requests only
     return userCreated
@@ -266,14 +212,61 @@ export const DashboardComponent: React.FC = () => {
   }, [filteredMyRequests, myRequestsPage, myRequestsPageSize]);
 
   // Overall Statistics for Dashboard Metric Cards
-  const totalCount = roleNominations.length;
-  const pendingCount = roleNominations.filter(
-    (n) => n.status === 'Pending' || n.status === 'In Review' || n.status === 'Under Review'
-  ).length;
-  const approvedCount = roleNominations.filter((n) => n.status === 'Approved').length;
-  const rejectedCount = roleNominations.filter(
-    (n) => n.status === 'Rejected' || (n.status as string) === 'REJECTED'
-  ).length;
+  const totalCount = (roleNominations || []).length;
+  const {
+    pendingCount,
+    approvedCount,
+    rejectedCount,
+    clarificationCount,
+    withdrawnCount,
+    modificationCount,
+    otherCount,
+  } = useMemo(() => {
+    let pending = 0;
+    let approved = 0;
+    let rejected = 0;
+    let clarification = 0;
+    let withdrawn = 0;
+    let modification = 0;
+    let other = 0;
+
+    for (const n of roleNominations || []) {
+      const cat = categorizeStatus(n.status);
+      switch (cat) {
+        case 'pending':
+          pending++;
+          break;
+        case 'approved':
+          approved++;
+          break;
+        case 'rejected':
+          rejected++;
+          break;
+        case 'clarification':
+          clarification++;
+          break;
+        case 'withdrawn':
+          withdrawn++;
+          break;
+        case 'modification':
+          modification++;
+          break;
+        default:
+          other++;
+          break;
+      }
+    }
+
+    return {
+      pendingCount: pending,
+      approvedCount: approved,
+      rejectedCount: rejected,
+      clarificationCount: clarification,
+      withdrawnCount: withdrawn,
+      modificationCount: modification,
+      otherCount: other,
+    };
+  }, [roleNominations]);
 
   const handleOpenDetails = (r: Nomination) => {
     try {
@@ -501,7 +494,7 @@ export const DashboardComponent: React.FC = () => {
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {/* Card 1: Total Requests */}
         <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
           <div className="flex items-center justify-between">
@@ -553,6 +546,62 @@ export const DashboardComponent: React.FC = () => {
             <span className="text-3xl font-bold font-mono text-slate-900">{rejectedCount}</span>
           </div>
         </div>
+
+        {/* Card 5: Clarification */}
+        <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500">Clarification</span>
+            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <HelpCircle size={18} />
+            </div>
+          </div>
+          <div className="mt-3">
+            <span className="text-3xl font-bold font-mono text-slate-900">{clarificationCount}</span>
+          </div>
+        </div>
+
+        {/* Card 6: Withdrawn */}
+        <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500">Withdrawn</span>
+            <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center">
+              <Ban size={18} />
+            </div>
+          </div>
+          <div className="mt-3">
+            <span className="text-3xl font-bold font-mono text-slate-900">{withdrawnCount}</span>
+          </div>
+        </div>
+
+        {/* Card 7: Under Modification (when applicable) */}
+        {modificationCount > 0 && (
+          <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Under Modification</span>
+              <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                <FileEdit size={18} />
+              </div>
+            </div>
+            <div className="mt-3">
+              <span className="text-3xl font-bold font-mono text-slate-900">{modificationCount}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Card 8: Other Statuses (when applicable) */}
+        {otherCount > 0 && (
+          <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Other</span>
+              <div className="w-9 h-9 rounded-xl bg-gray-100 text-gray-600 flex items-center justify-center">
+                <AlertTriangle size={18} />
+              </div>
+            </div>
+            <div className="mt-3">
+              <span className="text-3xl font-bold font-mono text-slate-900">{otherCount}</span>
+            </div>
+          </div>
+        )}
       </div>
 
 

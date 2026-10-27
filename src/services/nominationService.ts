@@ -1012,7 +1012,8 @@ export const nominationService = {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed: Nomination[] = JSON.parse(stored);
-        if (parsed && Array.isArray(parsed) && parsed.length >= 25) {
+        if (parsed && Array.isArray(parsed)) {
+          if (parsed.length === 0) return [];
           return parsed.map((n, i) => normalizeNomination(n, i));
         }
       }
@@ -1023,6 +1024,111 @@ export const nominationService = {
       console.error("Failed to read nominations from localStorage", e);
       return buildSeedNominations();
     }
+  },
+
+  filterMyRequests(nominations: Nomination[], userEmail?: string, userRole?: string): Nomination[] {
+    if (!nominations || !Array.isArray(nominations)) return [];
+    const role = (userRole || (typeof localStorage !== "undefined" ? localStorage.getItem("userRole") : "") || "user").toLowerCase();
+    if (role === "admin") {
+      return nominations;
+    }
+    const cleanEmail = (userEmail || (typeof localStorage !== "undefined" ? localStorage.getItem("userEmail") : "") || "user@srmtech.com").toLowerCase().trim();
+
+    return nominations.filter((r) => {
+      const email = (r.requesterEmail || r.nomineeEmail || "").toLowerCase().trim();
+      const origSubmitter = (r.originalSubmitter || "").toLowerCase().trim();
+      const reqName = (r.requesterName || r.nominee || "").toLowerCase().trim();
+
+      // Direct email match
+      if (email === cleanEmail || origSubmitter === cleanEmail) return true;
+
+      // Demo User identity alias matching (user@srmtech.com, user@gmail.com, "Demo User")
+      if (
+        cleanEmail === "user@srmtech.com" ||
+        cleanEmail === "user@gmail.com" ||
+        cleanEmail.startsWith("user@")
+      ) {
+        return (
+          email === "user@srmtech.com" ||
+          email === "user@gmail.com" ||
+          origSubmitter === "user@srmtech.com" ||
+          origSubmitter === "user@gmail.com" ||
+          reqName === "demo user" ||
+          reqName === "user" ||
+          email.includes("user")
+        );
+      }
+
+      // Approver identity alias matching (approver@srmtech.com, approver@gmail.com)
+      if (
+        cleanEmail === "approver@srmtech.com" ||
+        cleanEmail === "approver@gmail.com" ||
+        cleanEmail.startsWith("approver@")
+      ) {
+        return (
+          email === "approver@srmtech.com" ||
+          email === "approver@gmail.com" ||
+          origSubmitter === "approver@srmtech.com" ||
+          origSubmitter === "approver@gmail.com" ||
+          reqName.includes("approver")
+        );
+      }
+
+      // Admin alias matching
+      if (
+        cleanEmail === "admin@srmtech.com" ||
+        cleanEmail === "admin@gmail.com" ||
+        cleanEmail.startsWith("admin@")
+      ) {
+        return (
+          email === "admin@srmtech.com" ||
+          email === "admin@gmail.com" ||
+          origSubmitter === "admin@srmtech.com" ||
+          origSubmitter === "admin@gmail.com" ||
+          reqName.includes("admin")
+        );
+      }
+
+      return false;
+    });
+  },
+
+  filterEligibleApprovals(nominations: Nomination[], userEmail?: string, userRole?: string): Nomination[] {
+    if (!nominations || !Array.isArray(nominations)) return [];
+    const role = (userRole || (typeof localStorage !== "undefined" ? localStorage.getItem("userRole") : "") || "user").toLowerCase();
+    if (role === "admin") {
+      return nominations;
+    }
+    const cleanEmail = (userEmail || (typeof localStorage !== "undefined" ? localStorage.getItem("userEmail") : "") || "user@srmtech.com").toLowerCase().trim();
+
+    return nominations.filter((r) => {
+      const apprEmail = (r.approverEmail || r.managerEmail || "").toLowerCase().trim();
+      const isApprover =
+        apprEmail === cleanEmail ||
+        (cleanEmail.includes("approver") &&
+          (apprEmail.includes("approver") ||
+            (r.approverName || "").toLowerCase().includes("approver") ||
+            (r.approverName || "").toLowerCase().includes("karthik")));
+      const isReassignedToUser = (r.reassignments || []).some(
+        (re) => re.toEmail?.toLowerCase().trim() === cleanEmail
+      );
+      const isHistoryNewOwner = (r.reassignmentHistory || []).some(
+        (rh) => rh.newOwner?.toLowerCase().trim() === cleanEmail
+      );
+      return isApprover || isReassignedToUser || isHistoryNewOwner;
+    });
+  },
+
+  getRoleScopedNominations(nominations: Nomination[], userEmail?: string, userRole?: string): Nomination[] {
+    if (!nominations || !Array.isArray(nominations)) return [];
+    const role = (userRole || (typeof localStorage !== "undefined" ? localStorage.getItem("userRole") : "") || "user").toLowerCase();
+    if (role === "admin") {
+      return nominations;
+    }
+    if (role === "approver") {
+      return this.filterEligibleApprovals(nominations, userEmail, role);
+    }
+    return this.filterMyRequests(nominations, userEmail, role);
   },
 
   getNominationById(id: string): Nomination | undefined {

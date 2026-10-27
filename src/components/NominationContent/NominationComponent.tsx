@@ -99,51 +99,7 @@ const NominationComponent = () => {
 
   // Filter requests authored by the currently logged-in user (Admin views all organization requests)
   const myRequests = useMemo(() => {
-    if (userRole === "admin") {
-      return nominations;
-    }
-
-    return nominations.filter((r) => {
-      const email = (r.requesterEmail || r.nomineeEmail || "").toLowerCase().trim();
-      const origSubmitter = (r.originalSubmitter || "").toLowerCase().trim();
-      const reqName = (r.requesterName || r.nominee || "").toLowerCase().trim();
-
-      // Direct email match
-      if (email === currentUserEmail || origSubmitter === currentUserEmail) return true;
-
-      // Demo User identity alias matching (user@srmtech.com, user@gmail.com, "Demo User")
-      if (
-        currentUserEmail === "user@srmtech.com" ||
-        currentUserEmail === "user@gmail.com" ||
-        currentUserEmail.startsWith("user@")
-      ) {
-        return (
-          email === "user@srmtech.com" ||
-          email === "user@gmail.com" ||
-          origSubmitter === "user@srmtech.com" ||
-          origSubmitter === "user@gmail.com" ||
-          reqName === "demo user" ||
-          reqName === "user"
-        );
-      }
-
-      // Approver identity alias matching (approver@srmtech.com, approver@gmail.com)
-      if (
-        currentUserEmail === "approver@srmtech.com" ||
-        currentUserEmail === "approver@gmail.com" ||
-        currentUserEmail.startsWith("approver@")
-      ) {
-        return (
-          email === "approver@srmtech.com" ||
-          email === "approver@gmail.com" ||
-          origSubmitter === "approver@srmtech.com" ||
-          origSubmitter === "approver@gmail.com" ||
-          reqName.includes("approver")
-        );
-      }
-
-      return false;
-    });
+    return nominationService.filterMyRequests(nominations, currentUserEmail, userRole);
   }, [nominations, currentUserEmail, userRole]);
 
   return (

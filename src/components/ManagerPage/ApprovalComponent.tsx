@@ -84,32 +84,16 @@ const ApprovalComponent: React.FC = () => {
       setNominations(nominationService.getNominations());
     };
     window.addEventListener("easyapprove_nominations_updated", handleUpdate);
+    window.addEventListener("storage", handleUpdate);
     return () => {
       window.removeEventListener("easyapprove_nominations_updated", handleUpdate);
+      window.removeEventListener("storage", handleUpdate);
     };
   }, []);
 
   // Filter nominations eligible for approval based on role, assigned approver, and workflow rules
   const eligibleNominations = useMemo(() => {
-    return nominations.filter((r) => {
-      if (userRole === "admin") {
-        return true;
-      }
-      const apprEmail = (r.approverEmail || r.managerEmail || "").toLowerCase().trim();
-      const isApprover =
-        apprEmail === userEmail ||
-        (userEmail.includes("approver") &&
-          (apprEmail.includes("approver") ||
-            (r.approverName || "").toLowerCase().includes("approver") ||
-            (r.approverName || "").toLowerCase().includes("karthik")));
-      const isReassignedToUser = (r.reassignments || []).some(
-        (re) => re.toEmail?.toLowerCase().trim() === userEmail
-      );
-      const isHistoryNewOwner = (r.reassignmentHistory || []).some(
-        (rh) => rh.newOwner?.toLowerCase().trim() === userEmail
-      );
-      return isApprover || isReassignedToUser || isHistoryNewOwner;
-    });
+    return nominationService.filterEligibleApprovals(nominations, userEmail, userRole);
   }, [nominations, userRole, userEmail]);
 
   // Filter nominations based on search, status, category, and date range
