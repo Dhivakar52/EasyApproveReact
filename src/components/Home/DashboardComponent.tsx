@@ -339,7 +339,7 @@ export const DashboardComponent: React.FC = () => {
         accessorKey: 'title',
         header: 'Title',
         cell: ({ row }) => (
-          <div className="font-semibold text-slate-800" style={{ minWidth: '11rem' }}>
+          <div className="font-semibold text-slate-800 truncate" title={row.original.title}>
             {row.original.title}
           </div>
         ),
@@ -618,9 +618,9 @@ export const DashboardComponent: React.FC = () => {
                   {overdueRequests.length} Overdue
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
+              {/* <p className="text-xs text-slate-500 mt-0.5">
                 Pending requests whose deadlines have passed, sorted by oldest deadline first.
-              </p>
+              </p> */}
             </div>
           </div>
 
@@ -669,9 +669,9 @@ export const DashboardComponent: React.FC = () => {
                   {myRequests.length} Overdue
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
+              {/* <p className="text-xs text-slate-500 mt-0.5">
                 Pending requests created by you whose deadlines have passed, sorted by oldest deadline first.
-              </p>
+              </p> */}
             </div>
           </div>
 

@@ -631,7 +631,7 @@ export default function SelfNominationComponent() {
                 setTitle(e.target.value);
                 if (errors.title) setErrors((prev) => ({ ...prev, title: '' }));
               }}
-              placeholder="e.g. Developer Laptops for Q4 Engineering Onboarding"
+              placeholder="Enter a Title"
               className={`w-full text-xs py-2.5 px-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.title
                 ? 'border-rose-400 focus:ring-rose-200'
                 : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
@@ -653,7 +653,7 @@ export default function SelfNominationComponent() {
                 setDetails(e.target.value);
                 if (errors.details) setErrors((prev) => ({ ...prev, details: '' }));
               }}
-              placeholder="Provide specifications, quantities, scope of work, or change parameters..."
+              placeholder="Enter a Request Details"
               className={`w-full text-xs p-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.details
                 ? 'border-rose-400 focus:ring-rose-200'
                 : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
@@ -675,7 +675,7 @@ export default function SelfNominationComponent() {
                 setReason(e.target.value);
                 if (errors.reason) setErrors((prev) => ({ ...prev, reason: '' }));
               }}
-              placeholder="Explain the operational or commercial necessity..."
+              placeholder="Enter a Request Reason"
               className={`w-full text-xs p-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.reason
                 ? 'border-rose-400 focus:ring-rose-200'
                 : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'

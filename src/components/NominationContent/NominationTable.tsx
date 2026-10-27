@@ -355,8 +355,8 @@ const NominationTable: React.FC<NominationTableProps> = ({
         header: "Title",
         cell: ({ row }) => (
           <div
-            className="font-semibold text-slate-800"
-            style={{ minWidth: "11rem" }}
+            className="font-semibold text-slate-800 truncate"
+            title={row.original.title}
           >
             {row.original.title}
           </div>
