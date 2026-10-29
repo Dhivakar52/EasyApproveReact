@@ -51,6 +51,8 @@ export default function SelfNominationComponent() {
   const [title, setTitle] = useState('');
   // 5. Request Details
   const [details, setDetails] = useState('');
+  // Promised / Expected Deliverable
+  const [promisedDeliverable, setPromisedDeliverable] = useState('');
   // 6. Request Reason
   const [reason, setReason] = useState('');
   // 7. Request Category
@@ -87,6 +89,7 @@ export default function SelfNominationComponent() {
       setCustomCcInput('');
       setTitle('');
       setDetails('');
+      setPromisedDeliverable('');
       setReason('');
       setApprovalType('Expense Request');
       setAmount('');
@@ -128,6 +131,7 @@ export default function SelfNominationComponent() {
 
     setTitle(found.title || '');
     setDetails(found.details || found.description || '');
+    setPromisedDeliverable(found.promisedDeliverable || found.expectedDeliverable || '');
     setReason(found.reason || '');
     setApprovalType(found.type || found.category || 'Expense Request');
     setAmount(found.amount !== undefined && found.amount !== null ? String(found.amount) : '');
@@ -251,6 +255,7 @@ export default function SelfNominationComponent() {
     if (!toInput.trim()) newErrors.to = 'Enter recipient email or details.';
     if (!title.trim()) newErrors.title = 'Enter a request title.';
     if (!details.trim()) newErrors.details = 'Provide details of request.';
+    if (!promisedDeliverable.trim()) newErrors.promisedDeliverable = 'Promised / Expected Deliverable is required.';
     if (!reason.trim()) newErrors.reason = 'Explain the reason for requirement.';
     if (!approvalType) newErrors.approvalType = 'Select a request category.';
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
@@ -364,6 +369,8 @@ export default function SelfNominationComponent() {
           referrals: ccEmails,
           ccEmail: ccEmails.join(', '),
           details: details.trim(),
+          promisedDeliverable: promisedDeliverable.trim(),
+          expectedDeliverable: promisedDeliverable.trim(),
           reason: reason.trim(),
           description: `${details.trim()}\n\nJustification: ${reason.trim()}`,
           supportingDocuments: files,
@@ -414,6 +421,8 @@ export default function SelfNominationComponent() {
           referrals: ccEmails,
           ccEmail: ccEmails.join(', '),
           details: details.trim(),
+          promisedDeliverable: promisedDeliverable.trim(),
+          expectedDeliverable: promisedDeliverable.trim(),
           reason: reason.trim(),
           description: `${details.trim()}\n\nJustification: ${reason.trim()}`,
           supportingDocuments: files,
@@ -640,10 +649,10 @@ export default function SelfNominationComponent() {
             {errors.title && <p className="text-[11px] text-rose-600 mt-1">{errors.title}</p>}
           </div>
 
-          {/* Row 4: 5. Request Details */}
+          {/* Row 4: 5. Details of Request */}
           <div>
             <label htmlFor="f-details" className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Request Details <span className="text-rose-500">*</span>
+              Details of Request <span className="text-rose-500">*</span>
             </label>
             <textarea
               id="f-details"
@@ -653,13 +662,37 @@ export default function SelfNominationComponent() {
                 setDetails(e.target.value);
                 if (errors.details) setErrors((prev) => ({ ...prev, details: '' }));
               }}
-              placeholder="Enter a Request Details"
+              placeholder="Enter Details of Request"
               className={`w-full text-xs p-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.details
                 ? 'border-rose-400 focus:ring-rose-200'
                 : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
                 }`}
             />
             {errors.details && <p className="text-[11px] text-rose-600 mt-1">{errors.details}</p>}
+          </div>
+
+          {/* Promised / Expected Deliverable */}
+          <div>
+            <label htmlFor="f-deliverable" className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Promised / Expected Deliverable <span className="text-rose-500">*</span>
+            </label>
+            <textarea
+              id="f-deliverable"
+              rows={3}
+              value={promisedDeliverable}
+              onChange={(e) => {
+                setPromisedDeliverable(e.target.value);
+                if (errors.promisedDeliverable) setErrors((prev) => ({ ...prev, promisedDeliverable: '' }));
+              }}
+              placeholder="Enter a clear description of the promised / expected deliverable"
+              className={`w-full text-xs p-3 rounded-lg border bg-white focus:outline-none focus:ring-2 transition ${errors.promisedDeliverable
+                ? 'border-rose-400 focus:ring-rose-200'
+                : 'border-slate-300 focus:border-emerald-600 focus:ring-emerald-500/20'
+                }`}
+            />
+            {errors.promisedDeliverable && (
+              <p className="text-[11px] text-rose-600 mt-1">{errors.promisedDeliverable}</p>
+            )}
           </div>
 
           {/* Row 5: 6. Request Reason */}

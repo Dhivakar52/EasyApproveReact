@@ -33,6 +33,7 @@ export const ModifyRequestModal: React.FC<ModifyRequestModalProps> = ({
 
   const [title, setTitle] = useState(nomination.title || '');
   const [description, setDescription] = useState(nomination.description || '');
+  const [promisedDeliverable, setPromisedDeliverable] = useState(nomination.promisedDeliverable || nomination.expectedDeliverable || '');
   const [amount, setAmount] = useState<string>(String(nomination.amount || ''));
   const [deadline, setDeadline] = useState(nomination.deadline || '2026-10-30');
   const [extraReason, setExtraReason] = useState(nomination.extraReason || '');
@@ -72,6 +73,8 @@ export const ModifyRequestModal: React.FC<ModifyRequestModalProps> = ({
             ...item,
             title: title.trim(),
             description: description.trim(),
+            promisedDeliverable: promisedDeliverable.trim(),
+            expectedDeliverable: promisedDeliverable.trim(),
             amount: Number(amount) || item.amount,
             deadline: deadline,
             extraReason: extraReason.trim(),
@@ -162,6 +165,19 @@ export const ModifyRequestModal: React.FC<ModifyRequestModalProps> = ({
               rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              className="w-full text-xs py-2 px-3 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Promised / Expected Deliverable
+            </label>
+            <textarea
+              rows={3}
+              value={promisedDeliverable}
+              onChange={(e) => setPromisedDeliverable(e.target.value)}
+              placeholder="Enter a clear description of the expected deliverable"
               className="w-full text-xs py-2 px-3 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600"
             />
           </div>

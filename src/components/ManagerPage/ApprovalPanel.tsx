@@ -169,6 +169,18 @@ const ApprovalPanel = ({
               </p>
             </div>
 
+            {/* Promised / Expected Deliverable */}
+            <div className="p-3 border border-gray-200 rounded-lg text-xs">
+              <span className="font-bold text-gray-600 uppercase tracking-wider block text-[10px] mb-1">
+                Promised / Expected Deliverable
+              </span>
+              <p className="text-gray-700 whitespace-pre-wrap">
+                {fullNomination.promisedDeliverable ||
+                  fullNomination.expectedDeliverable ||
+                  "Completed project deliverables, audit sign-off, and implementation report."}
+              </p>
+            </div>
+
             {/* Reassignment Audit History if any */}
             {fullNomination.reassignmentHistory &&
               fullNomination.reassignmentHistory.length > 0 && (

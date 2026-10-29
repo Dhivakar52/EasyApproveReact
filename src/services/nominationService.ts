@@ -60,6 +60,8 @@ const buildSeedNominations = (): Nomination[] => {
     rejectReason?: string;
     withdrawReason?: string;
     details?: string;
+    promisedDeliverable?: string;
+    expectedDeliverable?: string;
     reason?: string;
   }> = [
     // -------------------------------------------------------------
@@ -909,6 +911,8 @@ const buildSeedNominations = (): Nomination[] => {
       assignedEmployee: r.approverName,
       status: r.status,
       details: r.details || "Detailed proposal documentation for departmental signoff.",
+      promisedDeliverable: (r as any).promisedDeliverable || (r as any).expectedDeliverable || "Completed project deliverables, audit sign-off, and implementation report.",
+      expectedDeliverable: (r as any).expectedDeliverable || (r as any).promisedDeliverable || "Completed project deliverables, audit sign-off, and implementation report.",
       reason: r.reason || "Operational necessity and commercial justification.",
       description: `${r.details || "Detailed proposal"}\n\nJustification: ${r.reason || "Operational necessity"}`,
       clarification: r.clarification,
@@ -1189,6 +1193,8 @@ export const nominationService = {
       requesterEmail: payload.requesterEmail || payload.nomineeEmail,
       ccEmail: payload.ccEmail || (payload.referrals && payload.referrals.join(', ')) || '',
       details: payload.details || payload.description || payload.title,
+      promisedDeliverable: payload.promisedDeliverable || payload.expectedDeliverable || "",
+      expectedDeliverable: payload.expectedDeliverable || payload.promisedDeliverable || "",
       reason: payload.reason || "Operational requirements compliant with departmental guidelines.",
       amount: expAmt,
       amountBudgeted: budgetAmt,

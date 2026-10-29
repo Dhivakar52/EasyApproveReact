@@ -809,6 +809,16 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                 </div>
               </div>
 
+              {/* Promised / Expected Deliverable */}
+              <div>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
+                  Promised / Expected Deliverable
+                </span>
+                <div className="p-2.5 rounded-lg bg-white border border-slate-200/80 text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
+                  {req.promisedDeliverable || req.expectedDeliverable || "Completed project deliverables, audit sign-off, and implementation report."}
+                </div>
+              </div>
+
               {/* Reason for Requirement */}
               <div>
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
@@ -1750,7 +1760,7 @@ const RequestDetailsPage: React.FC<RequestDetailsPageProps> = ({ mode }) => {
                       <i className="fa-solid fa-spinner fa-spin"></i> Submitting...
                     </>
                   ) : (
-                    "Send Clarification Inquiry"
+                    "Send"
                   )}
                 </button>
               </div>

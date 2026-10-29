@@ -225,6 +225,18 @@ export const RequestDrawer: React.FC<RequestDrawerProps> = ({
               </div>
             </div>
 
+            {/* Promised / Expected Deliverable */}
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                Promised / Expected Deliverable
+              </h3>
+              <div className="p-4 rounded-xl bg-white border border-slate-200 text-xs text-slate-700 leading-relaxed shadow-xs">
+                {nomination.promisedDeliverable ||
+                  nomination.expectedDeliverable ||
+                  "Completed project deliverables, audit sign-off, and implementation report."}
+              </div>
+            </div>
+
             {/* Project / Travel Specifics */}
             {nomination.travelDetails && (
               <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-100 space-y-2 text-xs">

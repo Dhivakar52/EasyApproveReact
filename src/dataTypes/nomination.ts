@@ -151,6 +151,8 @@ export interface Nomination {
   updatedAt?: string | number;
   version?: number;
   details?: string;
+  promisedDeliverable?: string;
+  expectedDeliverable?: string;
   reason?: string;
   timeline?: TimelineEvent[];
   clarification?: ClarificationRecord;
